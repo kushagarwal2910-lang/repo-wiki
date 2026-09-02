@@ -59,7 +59,6 @@ async function researchPass(topic: string, angle: string) {
       content: `Build one evidence pass for an educational knowledge base about: ${topic}\n\nResearch angle: ${angle}\n\nUse several web searches and visit the strongest pages. Prefer primary, official, university, museum, academic, technical, standards, government, and high-quality reference sources. Avoid SEO copies. Return a dense research brief with inline citations. Preserve uncertainty, disagreement, dates, mechanisms, terminology, evidence, examples, and visualizable relationships. Aim to cite 8–10 distinct sources not redundant with other likely research angles. Do not create a lesson yet.`,
     }],
     compound_custom: { tools: { enabled_tools: ['web_search', 'visit_website'] } },
-    citation_options: 'enabled',
   }, true);
   const choice = (data.choices as Array<{ message?: Record<string, unknown> }> | undefined)?.[0];
   const message = choice?.message || {};
