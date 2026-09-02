@@ -68,7 +68,7 @@ export const visualLessonSchema = {
     strategy: { type: 'string', enum: ['flow', 'timeline', 'network', 'cycle', 'comparison', 'layers'] },
     sourceSummary: { type: 'string', description: 'One sentence describing how retrieved evidence supports the lesson.' },
     scenes: {
-      type: 'array', minItems: 3, maxItems: 3,
+      type: 'array', minItems: 1, maxItems: 3,
       items: {
         type: 'object',
         additionalProperties: false,
