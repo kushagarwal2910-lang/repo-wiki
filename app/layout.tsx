@@ -14,16 +14,16 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'Anima — Visual Intelligence',
-  description: 'Turn trusted knowledge into interactive, narrated visual lessons.',
+  description: 'Research any topic and turn grounded answers into executable narrated animations.',
   openGraph: {
     title: 'Anima — Visual Intelligence',
-    description: 'Knowledge, made visible.',
+    description: 'Research anything. See the answer move.',
     images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Anima — Knowledge, made visible.' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Anima — Visual Intelligence',
-    description: 'Knowledge, made visible.',
+    description: 'Research anything. See the answer move.',
     images: ['/og.png'],
   },
 };

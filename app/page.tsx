@@ -1,234 +1,229 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight, BookOpen, Bot, Check, ChevronDown, CirclePause, CirclePlay,
-  Clock3, FileText, Focus, GitBranch, Layers3, Map, Maximize2, Mic2,
-  Pause, Play, RotateCcw, Search, ShieldCheck, Sparkles, Volume2,
+  ArrowLeft, ArrowRight, BookOpen, Check, CircleStop, Database, ExternalLink,
+  FileSearch, Globe2, Layers3, LoaderCircle, Mic2, Pause, Play, Plus,
+  Search, ShieldCheck, Sparkles, Volume2, WandSparkles, Waypoints,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import type { ResearchWorkspace, VisualLesson, VisualNode, VisualScene } from '@/lib/visual-schema';
 
-type Lesson = {
-  eyebrow: string; title: string; subtitle: string; prompt: string;
-  steps: { title: string; description: string; narration: string }[];
-  sources: { title: string; detail: string }[];
+type Phase = 'topic' | 'researching' | 'ready' | 'generating' | 'lesson' | 'error';
+
+const colors: Record<VisualNode['color'], { fill: string; stroke: string; text: string }> = {
+  lime: { fill: '#d7ff63', stroke: '#e7ff9a', text: '#0a1611' },
+  mint: { fill: '#173a2d', stroke: '#67e8b0', text: '#eafff3' },
+  blue: { fill: '#142e3e', stroke: '#61c7ff', text: '#effaff' },
+  amber: { fill: '#3a2b12', stroke: '#ffc861', text: '#fff9eb' },
+  coral: { fill: '#3b1f20', stroke: '#ff8b7c', text: '#fff2f0' },
+  violet: { fill: '#2b2140', stroke: '#b9a0ff', text: '#f7f2ff' },
 };
 
-const lessons: Record<string, Lesson> = {
-  politics: {
-    eyebrow: 'Civics · institutional flow', title: 'How India forms a government',
-    subtitle: 'From a citizen’s vote to the Council of Ministers', prompt: 'Explain how Indian politics works',
-    steps: [
-      { title: 'Citizens vote', description: 'Voters elect representatives from 543 parliamentary constituencies.', narration: 'India begins with citizens voting in their constituencies. Each constituency elects one member to the Lok Sabha.' },
-      { title: 'Lok Sabha forms', description: 'Elected members take their seats in the lower house of Parliament.', narration: 'The elected representatives together form the Lok Sabha, the house directly chosen by the people.' },
-      { title: 'Majority emerges', description: 'A party or coalition demonstrates support of the House.', narration: 'A party or coalition able to command a majority in the Lok Sabha is positioned to form the government.' },
-      { title: 'Government is formed', description: 'The Prime Minister leads the Council of Ministers.', narration: 'The President appoints the Prime Minister, who leads the Council of Ministers and is collectively responsible to the Lok Sabha.' },
-    ],
-    sources: [
-      { title: 'Constitution of India', detail: 'Articles 74–75 · primary source' },
-      { title: 'Election Commission of India', detail: 'Electoral process · official source' },
-      { title: 'Lok Sabha Secretariat', detail: 'House composition · official source' },
-    ],
-  },
-  history: {
-    eyebrow: 'History · map + timeline', title: 'The Indus Valley Civilization',
-    subtitle: 'Cities, trade and water systems across the Bronze Age', prompt: 'Teach me about the Indus Valley Civilization',
-    steps: [
-      { title: 'Early settlements', description: 'Communities grow around the Indus river system.', narration: 'We begin with settlements developing across the greater Indus river system.' },
-      { title: 'Urban expansion', description: 'Planned cities emerge across a wide geographic region.', narration: 'Urban centres such as Harappa and Mohenjo-daro develop planned streets and monumental structures.' },
-      { title: 'Connected cities', description: 'Weights, seals and goods reveal long-distance exchange.', narration: 'Standardized weights and traded goods reveal connections between distant cities and neighbouring regions.' },
-      { title: 'Transformation', description: 'Urban life changes over time rather than ending in one instant.', narration: 'The urban system gradually transforms, with settlements and populations shifting over time.' },
-    ],
-    sources: [
-      { title: 'UNESCO World Heritage Centre', detail: 'Mohenjo-daro · institutional source' },
-      { title: 'Archaeological Survey of India', detail: 'Harappan sites · primary archive' },
-      { title: 'Peer-reviewed archaeology', detail: 'Urban chronology · research synthesis' },
-    ],
-  },
-  science: {
-    eyebrow: 'Biology · zoomable structure', title: 'How blood moves through the heart',
-    subtitle: 'A guided journey through chambers, valves and circulation', prompt: 'Show me how the human heart pumps blood',
-    steps: [
-      { title: 'Blood returns', description: 'Deoxygenated blood enters the right atrium.', narration: 'We start as blood returning from the body enters the right atrium.' },
-      { title: 'Into the lungs', description: 'The right ventricle pumps blood toward the lungs.', narration: 'The right ventricle contracts, sending blood through the pulmonary artery toward the lungs.' },
-      { title: 'Oxygenated blood', description: 'Blood returns from the lungs to the left atrium.', narration: 'After receiving oxygen, blood returns to the left atrium through the pulmonary veins.' },
-      { title: 'Back to the body', description: 'The left ventricle drives blood into the aorta.', narration: 'The powerful left ventricle pumps oxygen-rich blood into the aorta and around the body.' },
-    ],
-    sources: [
-      { title: 'OpenStax Anatomy & Physiology', detail: 'Cardiac anatomy · reviewed textbook' },
-      { title: 'NIH / NCBI', detail: 'Circulatory physiology · official source' },
-      { title: 'Validated anatomy asset', detail: 'Geometry provenance · pending import' },
-    ],
-  },
-};
+function CameraScene({ scene }: { scene: VisualScene }) {
+  const zoom = Math.max(0.8, Math.min(2.2, scene.camera.zoom));
+  const translateX = 500 - scene.camera.x * 10 * zoom;
+  const translateY = 300 - scene.camera.y * 6 * zoom;
+  const nodeMap = new Map(scene.nodes.map((node) => [node.id, node]));
 
-function selectLesson(value: string) {
-  const normalized = value.toLowerCase();
-  if (normalized.includes('civil') || normalized.includes('history') || normalized.includes('indus')) return 'history';
-  if (normalized.includes('heart') || normalized.includes('blood') || normalized.includes('biology')) return 'science';
-  return 'politics';
+  return (
+    <svg className="h-full w-full" viewBox="0 0 1000 600" role="img" aria-label={scene.title}>
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(205,255,222,.055)" strokeWidth="1" /></pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#6f9b85" /></marker>
+        <filter id="glow"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+      </defs>
+      <rect width="1000" height="600" fill="url(#grid)" />
+      <g className="camera-layer" style={{ transform: `translate(${translateX}px, ${translateY}px) scale(${zoom})` }}>
+        {scene.edges.map((edge, index) => {
+          const from = nodeMap.get(edge.from); const to = nodeMap.get(edge.to);
+          if (!from || !to) return null;
+          const x1 = from.x * 10; const y1 = from.y * 6; const x2 = to.x * 10; const y2 = to.y * 6;
+          const path = `M ${x1} ${y1} C ${(x1 + x2) / 2} ${y1}, ${(x1 + x2) / 2} ${y2}, ${x2} ${y2}`;
+          return (
+            <g key={`${edge.from}-${edge.to}-${index}`}>
+              <path d={path} fill="none" stroke="rgba(132,181,157,.48)" strokeWidth="2" markerEnd="url(#arrow)" />
+              {edge.label && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 8} textAnchor="middle" fill="#789487" fontSize="11">{edge.label}</text>}
+              {edge.animated && <circle r="4" fill="#d7ff63" filter="url(#glow)"><animateMotion dur="2.1s" repeatCount="indefinite" path={path} /></circle>}
+            </g>
+          );
+        })}
+        {scene.nodes.map((node) => {
+          const palette = colors[node.color] || colors.mint;
+          const x = node.x * 10; const y = node.y * 6;
+          const focused = scene.focusNodeIds.includes(node.id);
+          return (
+            <g key={node.id} className={`visual-node ${focused ? 'is-focused' : ''}`} transform={`translate(${x} ${y})`}>
+              {focused && <circle r="58" fill="none" stroke={palette.stroke} strokeOpacity=".18" strokeWidth="2"><animate attributeName="r" values="42;62;42" dur="2.8s" repeatCount="indefinite" /><animate attributeName="stroke-opacity" values=".32;.06;.32" dur="2.8s" repeatCount="indefinite" /></circle>}
+              {node.shape === 'circle' ? <circle r="34" fill={palette.fill} stroke={palette.stroke} strokeWidth={focused ? 3 : 1.5} /> : <rect x={node.shape === 'pill' ? -72 : -62} y="-30" width={node.shape === 'pill' ? 144 : 124} height="60" rx={node.shape === 'pill' ? 30 : 14} fill={palette.fill} stroke={palette.stroke} strokeWidth={focused ? 3 : 1.5} />}
+              <text textAnchor="middle" y="4" fill={palette.text} fontSize="13" fontWeight="650">{node.label.slice(0, 24)}</text>
+              <text textAnchor="middle" y="50" fill="#8aa396" fontSize="10">{node.detail.slice(0, 42)}</text>
+            </g>
+          );
+        })}
+      </g>
+    </svg>
+  );
+}
+
+function ResearchProgress({ topic }: { topic: string }) {
+  const steps = ['Planning search angles', 'Searching the open web', 'Comparing authoritative sources', 'Building semantic chunks', 'Indexing the knowledge base'];
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setActive((value) => Math.min(value + 1, steps.length - 1)), 2400);
+    return () => window.clearInterval(timer);
+  }, [steps.length]);
+  return (
+    <div className="mx-auto w-full max-w-xl rounded-3xl border border-white/10 bg-[#0b1a15]/90 p-6 shadow-2xl backdrop-blur-xl md:p-8">
+      <div className="flex items-start gap-4"><span className="grid size-11 place-items-center rounded-2xl bg-[#d7ff63] text-[#08130f]"><FileSearch className="size-5" /></span><div><div className="text-xs uppercase tracking-[.18em] text-[#d7ff63]/70">Building knowledge workspace</div><h2 className="mt-1 text-xl font-semibold tracking-[-.03em]">{topic}</h2></div></div>
+      <div className="mt-7 space-y-4">
+        {steps.map((step, index) => <div key={step} className={`flex items-center gap-3 text-sm transition ${index <= active ? 'text-emerald-50/85' : 'text-emerald-50/25'}`}><span className={`grid size-6 place-items-center rounded-full border ${index < active ? 'border-[#68e8ae]/35 bg-[#68e8ae]/10 text-[#68e8ae]' : index === active ? 'border-[#d7ff63]/45 bg-[#d7ff63]/10 text-[#d7ff63]' : 'border-white/10'}`}>{index < active ? <Check className="size-3.5" /> : index === active ? <LoaderCircle className="size-3.5 animate-spin" /> : <span className="size-1 rounded-full bg-current" />}</span>{step}</div>)}
+      </div>
+      <p className="mt-7 text-xs leading-5 text-emerald-50/35">Gemini is searching multiple angles, preserving citations, and indexing the research into a dedicated File Search store.</p>
+    </div>
+  );
 }
 
 export default function Home() {
-  const [query, setQuery] = useState(lessons.politics.prompt);
-  const [lessonKey, setLessonKey] = useState('politics');
-  const [activeStep, setActiveStep] = useState(0);
+  const [phase, setPhase] = useState<Phase>('topic');
+  const [topic, setTopic] = useState('');
+  const [question, setQuestion] = useState('');
+  const [workspace, setWorkspace] = useState<ResearchWorkspace | null>(null);
+  const [lesson, setLesson] = useState<VisualLesson | null>(null);
+  const [sceneIndex, setSceneIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const lesson = lessons[lessonKey];
+  const [error, setError] = useState('');
+  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const scene = lesson?.scenes[sceneIndex];
 
   useEffect(() => {
-    if (!playing) return;
-    const timer = window.setInterval(() => setActiveStep((current) => {
-      if (current >= lesson.steps.length - 1) { setPlaying(false); return current; }
-      return current + 1;
-    }), 3400);
-    return () => window.clearInterval(timer);
-  }, [playing, lesson.steps.length]);
-
-  const progress = useMemo(() => ((activeStep + 1) / lesson.steps.length) * 100, [activeStep, lesson.steps.length]);
+    if (!playing || !scene || typeof window === 'undefined') return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(scene.narration);
+    utterance.rate = 0.96; utterance.pitch = 1;
+    utterance.onend = () => {
+      if (!lesson) return;
+      if (sceneIndex < lesson.scenes.length - 1) setSceneIndex((value) => value + 1);
+      else setPlaying(false);
+    };
+    speechRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+    return () => { utterance.onend = null; window.speechSynthesis.cancel(); };
+  }, [playing, sceneIndex, scene, lesson]);
 
   useEffect(() => {
     const context = document.modelContext;
     if (!context?.registerTool) return;
     const lifecycle = new AbortController();
     void Promise.resolve(context.registerTool({
-      name: 'start_visual_lesson',
-      title: 'Start visual lesson',
-      description: 'Start a narrated visual lesson for a learning topic in the visible Anima workspace.',
-      inputSchema: {
-        type: 'object',
-        properties: { topic: { type: 'string', minLength: 2 } },
-        required: ['topic'],
-        additionalProperties: false,
-      },
+      name: 'start_anima_research', title: 'Start Anima research',
+      description: 'Enter an arbitrary topic into Anima and begin building its research workspace.',
+      inputSchema: { type: 'object', properties: { topic: { type: 'string', minLength: 3 } }, required: ['topic'], additionalProperties: false },
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       execute(input: unknown) {
-        const topic = typeof input === 'object' && input !== null && 'topic' in input
-          ? String((input as { topic: unknown }).topic).trim()
-          : '';
-        if (topic.length < 2) throw new Error('A learning topic is required.');
-        const selected = selectLesson(topic);
-        setQuery(topic); setLessonKey(selected); setActiveStep(0); setPlaying(true);
-        return { status: 'started', topic, visualStrategy: lessons[selected].eyebrow };
+        const value = typeof input === 'object' && input !== null && 'topic' in input ? String((input as { topic: unknown }).topic).trim() : '';
+        if (value.length < 3) throw new Error('A clear topic is required.');
+        setTopic(value);
+        return { status: 'staged', topic: value, nextAction: 'Submit the visible research form.' };
       },
     }, { signal: lifecycle.signal })).catch(() => undefined);
     return () => lifecycle.abort();
   }, []);
 
-  function generateLesson(event: FormEvent) {
-    event.preventDefault(); setLessonKey(selectLesson(query)); setActiveStep(0); setPlaying(true);
+  async function startResearch(event: FormEvent) {
+    event.preventDefault();
+    const cleanTopic = topic.trim(); if (cleanTopic.length < 3) return;
+    setPhase('researching'); setError(''); setWorkspace(null); setLesson(null);
+    try {
+      const response = await fetch('/api/research', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ topic: cleanTopic }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Research failed.');
+      setWorkspace(data as ResearchWorkspace); setPhase('ready');
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Research failed.'); setPhase('error'); }
   }
 
+  async function askQuestion(event: FormEvent) {
+    event.preventDefault(); if (!workspace || question.trim().length < 2) return;
+    setPhase('generating'); setError(''); setPlaying(false);
+    try {
+      const response = await fetch('/api/lesson', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storeName: workspace.storeName, topic: workspace.topic, question: question.trim() }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Animation generation failed.');
+      setLesson(data as VisualLesson); setSceneIndex(0); setPhase('lesson');
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Animation generation failed.'); setPhase('error'); }
+  }
+
+  function reset() {
+    window.speechSynthesis?.cancel(); setPlaying(false); setWorkspace(null); setLesson(null); setQuestion(''); setError(''); setPhase('topic');
+  }
+
+  const sourceCount = workspace?.sources.length || 0;
+  const progress = lesson ? ((sceneIndex + 1) / lesson.scenes.length) * 100 : 0;
+  const status = useMemo(() => phase === 'researching' ? 'Researching' : phase === 'generating' ? 'Compiling animation' : workspace ? `${sourceCount} sources indexed` : 'Ready for any topic', [phase, workspace, sourceCount]);
+
   return (
-    <main className="min-h-screen bg-[#07120f] text-[#eff8f1]">
+    <main className="min-h-screen bg-[#06110d] text-[#eef8f1]">
       <header className="flex h-16 items-center justify-between border-b border-white/10 px-4 md:px-7">
-        <div className="flex items-center gap-3">
-          <div className="grid size-9 place-items-center rounded-xl bg-[#d7ff63] text-[#0c1713] shadow-[0_0_32px_rgba(215,255,99,.18)]"><Layers3 className="size-5" /></div>
-          <div><div className="font-semibold tracking-[-0.03em]">Anima</div><div className="text-[10px] uppercase tracking-[.2em] text-emerald-100/45">Visual intelligence</div></div>
-        </div>
-        <div className="hidden items-center gap-2 md:flex">
-          <Badge variant="outline" className="border-emerald-200/15 bg-emerald-100/5 text-emerald-50/70"><span className="size-1.5 rounded-full bg-[#d7ff63]" /> Research workspace</Badge>
-          <Button variant="ghost" size="icon" className="text-emerald-50/60 hover:bg-white/5 hover:text-white" aria-label="Open workspace menu"><ChevronDown /></Button>
-        </div>
+        <button onClick={reset} className="flex items-center gap-3 text-left"><span className="grid size-9 place-items-center rounded-xl bg-[#d7ff63] text-[#0b1712]"><Layers3 className="size-5" /></span><span><span className="block font-semibold tracking-[-.03em]">Anima</span><span className="block text-[9px] uppercase tracking-[.2em] text-emerald-100/40">Research to animation</span></span></button>
+        <div className="flex items-center gap-2"><Badge variant="outline" className="border-white/10 bg-white/[.035] text-emerald-50/55"><span className={`size-1.5 rounded-full ${phase === 'researching' || phase === 'generating' ? 'animate-pulse bg-amber-300' : 'bg-[#d7ff63]'}`} />{status}</Badge>{workspace && <Button variant="outline" className="hidden border-white/10 bg-white/[.035] text-emerald-50/60 hover:bg-white/10 sm:inline-flex" onClick={reset}><Plus /> New topic</Button>}</div>
       </header>
 
-      <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)_300px]">
-        <aside className="hidden border-r border-white/10 p-4 lg:flex lg:flex-col">
-          <Button className="h-10 justify-start rounded-xl bg-[#d7ff63] px-4 text-[#0b1712] hover:bg-[#caff42]"><Sparkles /> New exploration</Button>
-          <div className="mt-7 text-[10px] font-semibold uppercase tracking-[.18em] text-emerald-100/35">Recent lessons</div>
-          <nav className="mt-3 space-y-1">
-            {[
-              ['politics', GitBranch, 'Indian government', 'Flowchart'],
-              ['history', Map, 'Indus Valley', 'Map + timeline'],
-              ['science', Focus, 'Human heart', 'Zoomable model'],
-            ].map(([key, Icon, title, kind]) => (
-              <button key={key as string} onClick={() => { setLessonKey(key as string); setQuery(lessons[key as string].prompt); setActiveStep(0); setPlaying(false); }} className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${lessonKey === key ? 'bg-white/8 text-white' : 'text-emerald-50/55 hover:bg-white/5 hover:text-white'}`}>
-                <span className={`grid size-8 place-items-center rounded-lg ${lessonKey === key ? 'bg-[#d7ff63]/15 text-[#d7ff63]' : 'bg-white/5'}`}><Icon className="size-4" /></span>
-                <span className="min-w-0"><span className="block truncate text-sm font-medium">{title as string}</span><span className="block text-[11px] text-emerald-100/35">{kind as string}</span></span>
-              </button>
-            ))}
-          </nav>
-          <div className="mt-auto rounded-2xl border border-emerald-200/10 bg-[#0d1c17] p-4">
-            <div className="mb-3 flex items-center gap-2 text-xs font-medium text-emerald-50/75"><ShieldCheck className="size-4 text-[#d7ff63]" /> Evidence standard</div>
-            <p className="text-xs leading-5 text-emerald-50/40">Every visual claim stays linked to its source and confidence level.</p>
-          </div>
-        </aside>
-
-        <section className="flex min-w-0 flex-col">
-          <div className="border-b border-white/10 px-4 py-4 md:px-6">
-            <form onSubmit={generateLesson} className="mx-auto flex max-w-4xl items-center gap-2 rounded-2xl border border-white/10 bg-white/[.055] p-2 shadow-[0_18px_60px_rgba(0,0,0,.18)]">
-              <Search className="ml-2 size-4 shrink-0 text-emerald-100/35" />
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="What do you want to learn?" className="h-9 border-0 bg-transparent px-1 text-sm text-white shadow-none placeholder:text-emerald-100/30 focus-visible:ring-0" placeholder="What do you want to understand?" />
-              <Button type="submit" className="h-9 rounded-xl bg-[#d7ff63] px-4 text-[#0b1712] hover:bg-[#caff42]"><Bot /> Build lesson</Button>
+      {phase === 'topic' && (
+        <section className="relative grid min-h-[calc(100vh-4rem)] place-items-center overflow-hidden px-5 py-16">
+          <div className="absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_50%_35%,rgba(118,236,171,.18),transparent_38%),linear-gradient(rgba(255,255,255,.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.025)_1px,transparent_1px)] [background-size:auto,38px_38px,38px_38px]" />
+          <div className="relative w-full max-w-3xl text-center">
+            <Badge variant="outline" className="border-[#d7ff63]/20 bg-[#d7ff63]/5 text-[#d7ff63]/80"><Globe2 /> Open-web learning workspace</Badge>
+            <h1 className="mt-7 text-4xl font-semibold tracking-[-.055em] md:text-6xl">What do you want<br /><span className="text-[#d7ff63]">to understand?</span></h1>
+            <p className="mx-auto mt-5 max-w-xl text-sm leading-6 text-emerald-50/45 md:text-base">Enter anything. Anima researches the web, builds a dedicated knowledge base, then turns your questions into executable narrated animations.</p>
+            <form onSubmit={startResearch} className="mx-auto mt-9 flex max-w-2xl items-center gap-2 rounded-2xl border border-white/12 bg-white/[.06] p-2 shadow-[0_24px_90px_rgba(0,0,0,.35)] backdrop-blur-xl">
+              <Search className="ml-3 size-5 shrink-0 text-emerald-100/35" />
+              <Input autoFocus value={topic} onChange={(event) => setTopic(event.target.value)} className="h-12 border-0 bg-transparent px-1 text-base text-white shadow-none placeholder:text-emerald-100/25 focus-visible:ring-0" placeholder="Type any topic, system, event, idea, or question…" aria-label="Learning topic" />
+              <Button type="submit" disabled={topic.trim().length < 3} className="h-11 rounded-xl bg-[#d7ff63] px-5 text-[#08130f] hover:bg-[#caff42]"><Sparkles /> Research</Button>
             </form>
-          </div>
-
-          <div className="relative flex flex-1 flex-col overflow-hidden p-4 md:p-6">
-            <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:radial-gradient(circle_at_center,rgba(133,255,184,.18),transparent_46%),linear-gradient(rgba(255,255,255,.025)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.025)_1px,transparent_1px)] [background-size:auto,32px_32px,32px_32px]" />
-            <div className="relative mx-auto flex w-full max-w-5xl items-start justify-between gap-4">
-              <div><div className="mb-2 text-[10px] font-semibold uppercase tracking-[.2em] text-[#d7ff63]/70">{lesson.eyebrow}</div><h1 className="text-2xl font-semibold tracking-[-.04em] md:text-3xl">{lesson.title}</h1><p className="mt-1 text-sm text-emerald-50/45">{lesson.subtitle}</p></div>
-              <Button variant="outline" size="icon" className="border-white/10 bg-white/5 text-emerald-50/60 hover:bg-white/10 hover:text-white" aria-label="Expand lesson"><Maximize2 /></Button>
-            </div>
-
-            <div className="relative mx-auto my-auto w-full max-w-4xl py-10">
-              <div className="absolute left-[10%] right-[10%] top-1/2 h-px -translate-y-1/2 bg-white/10" />
-              <div className="absolute left-[10%] top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-[#d7ff63] to-[#62e7ad] transition-all duration-700" style={{ width: `${(activeStep / (lesson.steps.length - 1)) * 80}%` }} />
-              <div className="relative grid grid-cols-2 gap-x-8 gap-y-10 md:grid-cols-4 md:gap-5">
-                {lesson.steps.map((step, index) => {
-                  const complete = index < activeStep; const active = index === activeStep;
-                  return (
-                    <button key={step.title} onClick={() => { setActiveStep(index); setPlaying(false); }} className="group flex flex-col items-center text-center">
-                      <span className={`relative z-10 grid size-14 place-items-center rounded-2xl border transition-all duration-500 ${active ? 'scale-110 border-[#d7ff63] bg-[#d7ff63] text-[#0b1712] shadow-[0_0_42px_rgba(215,255,99,.28)]' : complete ? 'border-[#62e7ad]/40 bg-[#17352a] text-[#84efbd]' : 'border-white/10 bg-[#0b1914] text-emerald-50/35 group-hover:border-white/25'}`}>
-                        {complete ? <Check className="size-5" /> : <span className="font-mono text-sm">0{index + 1}</span>}
-                        {active && <span className="absolute -inset-2 -z-10 animate-ping rounded-[20px] border border-[#d7ff63]/20" />}
-                      </span>
-                      <span className={`mt-4 text-sm font-semibold transition ${active ? 'text-white' : 'text-emerald-50/55'}`}>{step.title}</span>
-                      <span className={`mt-1 max-w-40 text-xs leading-5 transition ${active ? 'text-emerald-50/55' : 'text-emerald-50/25'}`}>{step.description}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="relative mx-auto w-full max-w-4xl rounded-2xl border border-white/10 bg-[#0a1713]/90 p-3 shadow-[0_20px_70px_rgba(0,0,0,.22)] backdrop-blur-xl">
-              <div className="flex items-center gap-3">
-                <Button onClick={() => setPlaying((value) => !value)} size="icon-lg" className="rounded-xl bg-[#d7ff63] text-[#0b1712] hover:bg-[#caff42]" aria-label={playing ? 'Pause narration' : 'Play narration'}>{playing ? <Pause /> : <Play className="fill-current" />}</Button>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 text-xs text-emerald-50/45"><Mic2 className="size-3.5 text-[#d7ff63]" /> Narration · Scene {activeStep + 1} of {lesson.steps.length}</div>
-                  <p className="mt-1 truncate text-sm text-emerald-50/80">“{lesson.steps[activeStep].narration}”</p>
-                  <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-gradient-to-r from-[#d7ff63] to-[#62e7ad] transition-all duration-700" style={{ width: `${progress}%` }} /></div>
-                </div>
-                <Button variant="ghost" size="icon" className="text-emerald-50/45 hover:bg-white/5 hover:text-white" aria-label="Restart lesson" onClick={() => { setActiveStep(0); setPlaying(false); }}><RotateCcw /></Button>
-                <Button variant="ghost" size="icon" className="hidden text-emerald-50/45 hover:bg-white/5 hover:text-white sm:inline-flex" aria-label="Volume"><Volume2 /></Button>
-              </div>
-            </div>
+            <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-3 text-xs text-emerald-50/30"><span className="flex items-center gap-2"><Globe2 className="size-3.5" /> 20–25 web sources</span><span className="flex items-center gap-2"><Database className="size-3.5" /> Dedicated semantic RAG</span><span className="flex items-center gap-2"><WandSparkles className="size-3.5" /> Generated visual program</span></div>
           </div>
         </section>
+      )}
 
-        <aside className="border-t border-white/10 bg-[#091612] p-4 lg:border-l lg:border-t-0 lg:p-5">
-          <div className="flex items-center justify-between"><div><div className="text-sm font-semibold">Lesson intelligence</div><div className="mt-0.5 text-xs text-emerald-50/35">Grounding and visual plan</div></div><span className="flex size-8 items-center justify-center rounded-full border border-[#d7ff63]/20 bg-[#d7ff63]/10 text-[#d7ff63]"><ShieldCheck className="size-4" /></span></div>
-          <div className="mt-6 space-y-2">
-            {[
-              [BookOpen, 'Knowledge RAG', '3 sources retrieved'],
-              [GitBranch, 'Visual strategy', lessonKey === 'science' ? 'Zoomable structure' : lessonKey === 'history' ? 'Map + timeline' : 'Institutional flow'],
-              [FileText, 'Coding RAG', '4 verified patterns'],
-            ].map(([Icon, title, detail]) => (
-              <div key={title as string} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[.035] p-3"><span className="grid size-8 place-items-center rounded-lg bg-emerald-100/5 text-emerald-100/55"><Icon className="size-4" /></span><span className="min-w-0"><span className="block text-xs font-medium text-emerald-50/75">{title as string}</span><span className="block truncate text-[11px] text-emerald-50/30">{detail as string}</span></span><Check className="ml-auto size-3.5 text-[#7ce5b3]" /></div>
-            ))}
-          </div>
-          <div className="mt-7 flex items-center justify-between"><div className="text-[10px] font-semibold uppercase tracking-[.18em] text-emerald-100/35">Evidence</div><Badge variant="outline" className="border-emerald-200/10 text-[10px] text-emerald-50/45">Verified today</Badge></div>
-          <div className="mt-3 space-y-4">
-            {lesson.sources.map((source, index) => <div key={source.title} className="group flex gap-3"><span className="mt-0.5 font-mono text-[10px] text-[#d7ff63]/55">0{index + 1}</span><div className="min-w-0"><div className="text-xs font-medium leading-5 text-emerald-50/70 group-hover:text-white">{source.title}</div><div className="text-[11px] leading-4 text-emerald-50/28">{source.detail}</div></div></div>)}
-          </div>
-          <div className="mt-7 rounded-2xl border border-[#d7ff63]/10 bg-gradient-to-br from-[#d7ff63]/8 to-transparent p-4">
-            <div className="flex items-center gap-2 text-xs font-medium text-[#d7ff63]"><Clock3 className="size-4" /> Live lesson state</div>
-            <p className="mt-2 text-xs leading-5 text-emerald-50/40">Narration, camera focus and visual events share one semantic timeline.</p>
-            <div className="mt-3 flex items-center gap-2 text-[10px] uppercase tracking-[.12em] text-emerald-50/30">{playing ? <CirclePlay className="size-3.5 text-[#d7ff63]" /> : <CirclePause className="size-3.5" />}{playing ? 'Scene playing' : 'Scene paused'} <ArrowRight className="ml-auto size-3.5" /></div>
-          </div>
-        </aside>
-      </div>
+      {phase === 'researching' && <section className="grid min-h-[calc(100vh-4rem)] place-items-center px-5 py-16"><ResearchProgress topic={topic} /></section>}
+
+      {(phase === 'ready' || phase === 'generating' || phase === 'lesson' || phase === 'error') && workspace && (
+        <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="border-b border-white/10 bg-[#081510] p-5 xl:border-b-0 xl:border-r">
+            <button onClick={reset} className="flex items-center gap-2 text-xs text-emerald-50/40 hover:text-white"><ArrowLeft className="size-3.5" /> All workspaces</button>
+            <div className="mt-6"><div className="text-[10px] font-semibold uppercase tracking-[.18em] text-[#d7ff63]/65">Knowledge workspace</div><h2 className="mt-2 text-lg font-semibold leading-6 tracking-[-.025em]">{workspace.topic}</h2></div>
+            <div className="mt-5 grid grid-cols-2 gap-2"><div className="rounded-xl border border-white/8 bg-white/[.03] p-3"><div className="font-mono text-lg text-[#d7ff63]">{sourceCount}</div><div className="text-[10px] text-emerald-50/30">sources</div></div><div className="rounded-xl border border-white/8 bg-white/[.03] p-3"><div className="font-mono text-lg text-[#6ee7b0]">RAG</div><div className="text-[10px] text-emerald-50/30">indexed</div></div></div>
+            <div className="mt-6 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.16em] text-emerald-50/35"><BookOpen className="size-3.5" /> Research sources</div>
+            <div className="mt-3 max-h-[48vh] space-y-3 overflow-y-auto pr-1">
+              {workspace.sources.map((source, index) => <a key={`${source.url}-${index}`} href={source.url} target="_blank" rel="noreferrer" className="group flex gap-3 rounded-xl border border-transparent p-2 hover:border-white/8 hover:bg-white/[.03]"><span className="font-mono text-[10px] text-[#d7ff63]/50">{String(index + 1).padStart(2, '0')}</span><span className="min-w-0"><span className="line-clamp-2 text-xs leading-5 text-emerald-50/60 group-hover:text-white">{source.title}</span><span className="mt-0.5 flex items-center gap-1 truncate text-[10px] text-emerald-50/25">{new URL(source.url).hostname}<ExternalLink className="size-2.5" /></span></span></a>)}
+            </div>
+          </aside>
+
+          <section className="flex min-w-0 flex-col">
+            {!lesson && phase !== 'generating' && (
+              <div className="grid flex-1 place-items-center px-5 py-14">
+                <div className="w-full max-w-2xl text-center"><span className="mx-auto grid size-14 place-items-center rounded-2xl border border-[#d7ff63]/20 bg-[#d7ff63]/8 text-[#d7ff63]"><ShieldCheck className="size-6" /></span><div className="mt-5 text-[10px] uppercase tracking-[.2em] text-[#d7ff63]/65">Knowledge base ready</div><h2 className="mt-2 text-3xl font-semibold tracking-[-.045em]">Ask what you want to see explained.</h2><p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-emerald-50/40">The answer will be retrieved from this workspace and compiled into a visual scene—not returned as a chat message.</p>
+                  <form onSubmit={askQuestion} className="mt-8 flex items-center gap-2 rounded-2xl border border-white/12 bg-white/[.05] p-2"><Waypoints className="ml-3 size-5 text-emerald-100/35" /><Input value={question} onChange={(event) => setQuestion(event.target.value)} autoFocus className="h-11 border-0 bg-transparent shadow-none focus-visible:ring-0" placeholder={`What about ${workspace.topic} should Anima explain?`} aria-label="Question for this knowledge base" /><Button type="submit" className="h-10 rounded-xl bg-[#d7ff63] px-4 text-[#08130f] hover:bg-[#caff42]"><WandSparkles /> Generate animation</Button></form>
+                </div>
+              </div>
+            )}
+
+            {phase === 'generating' && <div className="grid flex-1 place-items-center px-5"><div className="text-center"><span className="mx-auto grid size-16 place-items-center rounded-2xl border border-[#d7ff63]/20 bg-[#d7ff63]/8 text-[#d7ff63]"><LoaderCircle className="size-7 animate-spin" /></span><h2 className="mt-5 text-xl font-semibold">Compiling a visual explanation</h2><p className="mt-2 text-sm text-emerald-50/35">Retrieving evidence, choosing a visual grammar, and generating scene code…</p></div></div>}
+
+            {phase === 'error' && <div className="grid flex-1 place-items-center px-5"><div className="max-w-lg rounded-2xl border border-red-300/15 bg-red-300/5 p-6 text-center"><h2 className="font-semibold text-red-100">Anima could not continue</h2><p className="mt-2 text-sm leading-6 text-red-100/55">{error}</p><div className="mt-5 flex justify-center gap-2"><Button variant="outline" onClick={() => setPhase('ready')} className="border-white/10 bg-white/5">Back to workspace</Button><Button onClick={reset} className="bg-[#d7ff63] text-[#08130f]">Start over</Button></div></div></div>}
+
+            {lesson && scene && phase === 'lesson' && (
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <div className="flex items-start justify-between border-b border-white/10 px-5 py-4 md:px-7"><div><div className="text-[10px] uppercase tracking-[.18em] text-[#d7ff63]/65">Generated {lesson.strategy} animation</div><h1 className="mt-1 text-xl font-semibold tracking-[-.03em] md:text-2xl">{lesson.title}</h1><p className="mt-1 text-xs text-emerald-50/35">{lesson.subtitle}</p></div><Button variant="outline" onClick={() => { setLesson(null); setPlaying(false); setPhase('ready'); }} className="border-white/10 bg-white/[.03] text-emerald-50/60"><Plus /> Ask another</Button></div>
+                <div className="relative min-h-[420px] flex-1 overflow-hidden bg-[#07130f]"><CameraScene key={scene.id} scene={scene} /><div className="pointer-events-none absolute left-5 top-5 rounded-xl border border-white/10 bg-[#081510]/85 px-3 py-2 backdrop-blur"><div className="text-[9px] uppercase tracking-[.16em] text-emerald-50/35">Scene {sceneIndex + 1} of {lesson.scenes.length}</div><div className="mt-1 text-sm font-medium">{scene.title}</div></div></div>
+                <div className="border-t border-white/10 bg-[#081510] p-4 md:px-6"><div className="mx-auto flex max-w-5xl items-center gap-3"><Button size="icon-lg" onClick={() => setPlaying((value) => !value)} className="rounded-xl bg-[#d7ff63] text-[#08130f] hover:bg-[#caff42]" aria-label={playing ? 'Pause lesson' : 'Play lesson'}>{playing ? <Pause /> : <Play className="fill-current" />}</Button><div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[.14em] text-emerald-50/35"><Mic2 className="size-3 text-[#d7ff63]" /> Live narration</div><p className="mt-1 truncate text-sm text-emerald-50/75">{scene.narration}</p><div className="mt-2 h-1 overflow-hidden rounded-full bg-white/8"><div className="h-full bg-gradient-to-r from-[#d7ff63] to-[#64e9ae] transition-all duration-700" style={{ width: `${progress}%` }} /></div></div><Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); setSceneIndex(Math.max(0, sceneIndex - 1)); }} disabled={sceneIndex === 0} className="text-emerald-50/40"><ArrowLeft /></Button><Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); setSceneIndex(Math.min(lesson.scenes.length - 1, sceneIndex + 1)); }} disabled={sceneIndex === lesson.scenes.length - 1} className="text-emerald-50/40"><ArrowRight /></Button><Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); }} className="hidden text-emerald-50/40 sm:inline-flex" aria-label="Stop voice"><CircleStop /></Button><Volume2 className="hidden size-4 text-emerald-50/25 md:block" /></div><p className="mx-auto mt-3 max-w-5xl truncate text-[10px] text-emerald-50/25">{lesson.sourceSummary}</p></div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </main>
   );
 }
