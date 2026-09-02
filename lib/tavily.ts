@@ -14,6 +14,11 @@ type TavilyResult = {
 
 type DiscoveredSource = ResearchSource & { content: string; score: number };
 
+const EXCLUDED_HOSTS = new Set([
+  'brainly.com', 'quora.com', 'testbook.com', 'fiveable.me', 'adaptiverseapp.com',
+  'intrinsicallysafestore.com', 'thezoofamily.com', 'coursehero.com', 'chegg.com',
+]);
+
 function tavilyKey() {
   const key = process.env.TAVILY_API_KEY;
   if (!key) throw new Error('TAVILY_API_KEY is not configured for this deployment.');
@@ -76,6 +81,8 @@ function rankAndDiversify(results: TavilyResult[]) {
   for (const result of results) {
     if (!result.url || !/^https?:\/\//.test(result.url)) continue;
     const url = canonicalUrl(result.url);
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    if (EXCLUDED_HOSTS.has(host) || [...EXCLUDED_HOSTS].some((blocked) => host.endsWith(`.${blocked}`))) continue;
     const candidate: DiscoveredSource = {
       title: result.title?.trim() || new URL(url).hostname,
       url,
@@ -131,8 +138,9 @@ function splitIntoChunks(text: string, size = 1800) {
 
 export async function buildResearchWorkspace(topic: string): Promise<ResearchWorkspace> {
   const queries = [
-    `${topic} authoritative overview mechanisms primary sources`,
-    `${topic} research evidence history applications limitations debates`,
+    `${topic} authoritative overview mechanisms primary sources university government`,
+    `${topic} peer reviewed research evidence history applications limitations debates`,
+    `${topic} official educational scientific institutional reference`,
   ];
   const initial = (await Promise.all(queries.map((query) => search(query)))).flat();
   let selected = rankAndDiversify(initial);
