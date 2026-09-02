@@ -5,7 +5,7 @@ export type ResearchSource = {
 
 export type ResearchWorkspace = {
   topic: string;
-  storeName: string;
+  workspaceId: string;
   brief: string;
   sources: ResearchSource[];
   createdAt: string;
@@ -49,6 +49,7 @@ export type VisualLesson = {
 
 const nodeSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     id: { type: 'string' }, label: { type: 'string' }, detail: { type: 'string' },
     x: { type: 'number', description: 'Horizontal position from 8 to 92.' },
@@ -61,6 +62,7 @@ const nodeSchema = {
 
 export const visualLessonSchema = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     title: { type: 'string' }, subtitle: { type: 'string' },
     strategy: { type: 'string', enum: ['flow', 'timeline', 'network', 'cycle', 'comparison', 'layers'] },
@@ -69,11 +71,13 @@ export const visualLessonSchema = {
       type: 'array', minItems: 3, maxItems: 7,
       items: {
         type: 'object',
+        additionalProperties: false,
         properties: {
           id: { type: 'string' }, title: { type: 'string' }, narration: { type: 'string' },
           durationSeconds: { type: 'integer', minimum: 4, maximum: 20 },
           camera: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               x: { type: 'number', description: 'Camera target x from 0 to 100.' },
               y: { type: 'number', description: 'Camera target y from 0 to 100.' },
@@ -85,6 +89,7 @@ export const visualLessonSchema = {
             type: 'array', maxItems: 18,
             items: {
               type: 'object',
+              additionalProperties: false,
               properties: {
                 from: { type: 'string' }, to: { type: 'string' }, label: { type: 'string' }, animated: { type: 'boolean' },
               }, required: ['from', 'to', 'label', 'animated'],

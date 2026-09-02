@@ -148,7 +148,7 @@ export default function Home() {
     event.preventDefault(); if (!workspace || question.trim().length < 2) return;
     setPhase('generating'); setError(''); setPlaying(false);
     try {
-      const response = await fetch('/api/lesson', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storeName: workspace.storeName, topic: workspace.topic, question: question.trim() }) });
+      const response = await fetch('/api/lesson', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspaceId: workspace.workspaceId, question: question.trim() }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Animation generation failed.');
       setLesson(data as VisualLesson); setSceneIndex(0); setPhase('lesson');
@@ -188,6 +188,16 @@ export default function Home() {
       )}
 
       {phase === 'researching' && <section className="grid min-h-[calc(100vh-4rem)] place-items-center px-5 py-16"><ResearchProgress topic={topic} /></section>}
+
+      {phase === 'error' && !workspace && (
+        <section className="grid min-h-[calc(100vh-4rem)] place-items-center px-5 py-16">
+          <div className="w-full max-w-lg rounded-3xl border border-red-300/15 bg-red-300/5 p-7 text-center shadow-2xl">
+            <h2 className="text-lg font-semibold text-red-100">Research could not start</h2>
+            <p className="mt-3 text-sm leading-6 text-red-100/55">{error}</p>
+            <Button onClick={reset} className="mt-6 bg-[#d7ff63] text-[#08130f] hover:bg-[#caff42]">Return to topic</Button>
+          </div>
+        </section>
+      )}
 
       {(phase === 'ready' || phase === 'generating' || phase === 'lesson' || phase === 'error') && workspace && (
         <div className="grid min-h-[calc(100vh-4rem)] grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)]">
