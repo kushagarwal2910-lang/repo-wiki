@@ -11,8 +11,10 @@ function flowPath(points: Array<{ x: number; y: number }>) {
 export function ReferenceSceneView({ scene }: { scene: VisualScene }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [activeUrl, setActiveUrl] = useState(0);
   const [focused, setFocused] = useState(false);
   const visual = scene.visualAsset;
+  const urls = useMemo(() => visual ? [visual.url, ...(visual.fallbackUrls || [])] : [], [visual]);
   const safeId = useMemo(() => scene.id.replace(/[^a-zA-Z0-9_-]/g, '-'), [scene.id]);
 
   useEffect(() => {
@@ -20,7 +22,8 @@ export function ReferenceSceneView({ scene }: { scene: VisualScene }) {
     return () => cancelAnimationFrame(frame);
   }, [scene.id]);
 
-  if (!visual || failed) return <PhysicalSceneView scene={scene} />;
+  if (!visual) return <PhysicalSceneView scene={scene} />;
+  if (failed) return <div className="relative grid h-full min-h-[420px] place-items-center overflow-hidden bg-[radial-gradient(circle_at_center,#15362a_0%,#06110d_72%)]" role="img" aria-label={`${scene.title}, visual reference temporarily unavailable`}><div className="max-w-lg px-8 text-center"><div className="mx-auto size-12 animate-pulse rounded-full border border-[#d7ff63]/40 bg-[#d7ff63]/10" /><h3 className="mt-5 text-lg font-semibold">Accurate visual temporarily unavailable</h3><p className="mt-2 text-sm leading-6 text-emerald-50/55">{scene.narration}</p></div></div>;
 
   const transform = focused
     ? `translate(${50 - scene.camera.x}%, ${50 - scene.camera.y}%) scale(${Math.max(1, scene.camera.zoom)})`
@@ -31,7 +34,7 @@ export function ReferenceSceneView({ scene }: { scene: VisualScene }) {
       {!loaded && <div className="absolute inset-0 grid place-items-center"><div className="flex items-center gap-2 text-xs uppercase tracking-[.16em] text-emerald-50/35"><span className="size-2 animate-pulse rounded-full bg-[#d7ff63]" />Loading accurate visual reference</div></div>}
       <div className="absolute inset-7 flex items-center justify-center overflow-visible">
         <div className="relative inline-grid max-h-full max-w-full transition-transform duration-[1800ms] ease-out" style={{ transform, transformOrigin: `${scene.camera.x}% ${scene.camera.y}%` }}>
-          <img src={visual.url} alt={visual.description || scene.title} referrerPolicy="no-referrer" onLoad={() => setLoaded(true)} onError={() => setFailed(true)} className={`col-start-1 row-start-1 block max-h-[calc(100vh-300px)] min-h-72 max-w-full rounded-2xl object-contain shadow-[0_28px_90px_rgba(0,0,0,.45)] transition-opacity duration-500 ${loaded ? 'opacity-95' : 'opacity-0'}`} />
+          <img src={urls[activeUrl]} alt={visual.description || scene.title} referrerPolicy="no-referrer" onLoad={() => setLoaded(true)} onError={() => { setLoaded(false); if (activeUrl < urls.length - 1) setActiveUrl((value) => value + 1); else setFailed(true); }} className={`col-start-1 row-start-1 block max-h-[calc(100vh-300px)] min-h-72 max-w-full rounded-2xl object-contain shadow-[0_28px_90px_rgba(0,0,0,.45)] transition-opacity duration-500 ${loaded ? 'opacity-95' : 'opacity-0'}`} />
           {loaded && <svg className="pointer-events-none col-start-1 row-start-1 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             <defs>
               <filter id={`image-glow-${safeId}`}><feGaussianBlur stdDeviation=".8" /></filter>

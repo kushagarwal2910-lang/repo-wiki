@@ -112,10 +112,10 @@ export async function findVisualReferences(topic: string, question: string): Pro
       seen.add(url);
       candidates.push({ url, description: (entry.description || `${topic} educational reference`).slice(0, 300), sourceUrl });
     };
-    if (Array.isArray(data.images)) data.images.forEach((image) => add(image));
     for (const result of results) {
       if (Array.isArray(result.images)) result.images.forEach((image) => add(image, result.url));
     }
+    if (Array.isArray(data.images)) data.images.forEach((image) => add(image));
     return candidates.slice(0, 5);
   } catch {
     return [];

@@ -1,5 +1,6 @@
 import { retrieveWorkspace } from './database';
 import { findVisualReferences, type VisualReferenceCandidate } from './tavily';
+import { createVisualProxyUrl } from './visual-proxy';
 import type { ImageFlow, PhysicalFlow, PhysicalObject, VisualEdge, VisualHotspot, VisualLesson, VisualNode, VisualScene } from './visual-schema';
 
 const GROQ_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
@@ -48,8 +49,8 @@ export async function generateVisualLesson(workspaceId: string, question: string
       });
       const modelContent = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
       const parsed = parseModelJson(modelContent);
-      if (Array.isArray(record(parsed).scenes)) return normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references);
-    } catch { /* Continue with the text-only compiler. */ }
+      if (Array.isArray(record(parsed).scenes)) return finalizeReferenceLesson(normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references), references);
+    } catch (error) { console.warn('Vision compiler unavailable; using deterministic reference planning.', error instanceof Error ? error.message : 'unknown error'); }
   }
 
   try {
@@ -64,9 +65,10 @@ export async function generateVisualLesson(workspaceId: string, question: string
       response_format: { type: 'json_object' },
     });
     const content = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
-    return normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, []);
-  } catch {
-    return buildGroundedFallback(workspace.topic, question, evidenceSentences);
+    return finalizeReferenceLesson(normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, references), references);
+  } catch (error) {
+    console.warn('Text compiler unavailable; using grounded fallback.', error instanceof Error ? error.message : 'unknown error');
+    return finalizeReferenceLesson(buildGroundedFallback(workspace.topic, question, evidenceSentences), references);
   }
 }
 
@@ -371,4 +373,26 @@ function normalizeVisualLesson(value: unknown, topic: string, question: string, 
     visualMode,
     scenes,
   };
+}
+
+async function finalizeReferenceLesson(lesson: VisualLesson, references: VisualReferenceCandidate[]): Promise<VisualLesson> {
+  if (!references.length || lesson.visualMode === 'diagram') return lesson;
+  const proxyUrls = await Promise.all(references.map((reference) => createVisualProxyUrl(reference.url)));
+  let referenceScenes = 0;
+  const scenes = lesson.scenes.map((scene) => {
+    if (scene.renderMode === 'diagram') return scene;
+    referenceScenes += 1;
+    const selectedIndex = Math.max(0, references.findIndex((reference) => reference.url === scene.visualAsset?.url));
+    const selected = references[selectedIndex];
+    return {
+      ...scene,
+      renderMode: 'reference2d' as const,
+      visualAsset: {
+        ...selected,
+        url: proxyUrls[selectedIndex],
+        fallbackUrls: proxyUrls.filter((_, index) => index !== selectedIndex),
+      },
+    };
+  });
+  return { ...lesson, visualMode: referenceScenes ? 'reference2d' : lesson.visualMode, scenes };
 }

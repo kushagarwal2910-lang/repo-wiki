@@ -59,6 +59,7 @@ export type VisualAsset = {
   url: string;
   description: string;
   sourceUrl?: string;
+  fallbackUrls?: string[];
 };
 
 export type VisualHotspot = {
