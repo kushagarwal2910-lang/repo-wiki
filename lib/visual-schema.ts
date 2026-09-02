@@ -28,6 +28,33 @@ export type VisualEdge = {
   animated: boolean;
 };
 
+export type PhysicalPrimitive = 'sphere' | 'box' | 'cylinder' | 'cone' | 'torus' | 'capsule' | 'tube';
+
+export type PhysicalObject = {
+  id: string;
+  label: string;
+  detail: string;
+  primitive: PhysicalPrimitive;
+  position: [number, number, number];
+  scale: [number, number, number];
+  rotation: [number, number, number];
+  color: string;
+  opacity: number;
+  roughness: number;
+  metalness: number;
+  motion: 'none' | 'rotate' | 'pulse' | 'oscillate';
+  cutaway: boolean;
+};
+
+export type PhysicalFlow = {
+  from: string;
+  to: string;
+  label: string;
+  color: string;
+  speed: number;
+  particleCount: number;
+};
+
 export type VisualScene = {
   id: string;
   title: string;
@@ -37,6 +64,14 @@ export type VisualScene = {
   nodes: VisualNode[];
   edges: VisualEdge[];
   focusNodeIds: string[];
+  renderMode: 'physical3d' | 'spatial2d' | 'diagram';
+  camera3d: {
+    position: [number, number, number];
+    target: [number, number, number];
+    autoRotate: boolean;
+  };
+  objects: PhysicalObject[];
+  flows: PhysicalFlow[];
 };
 
 export type VisualLesson = {
@@ -44,6 +79,7 @@ export type VisualLesson = {
   subtitle: string;
   strategy: 'flow' | 'timeline' | 'network' | 'cycle' | 'comparison' | 'layers';
   sourceSummary: string;
+  visualMode: 'physical3d' | 'spatial2d' | 'diagram';
   scenes: VisualScene[];
 };
 

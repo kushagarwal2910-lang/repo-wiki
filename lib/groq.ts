@@ -1,5 +1,5 @@
 import { retrieveWorkspace } from './database';
-import type { VisualEdge, VisualLesson, VisualNode, VisualScene } from './visual-schema';
+import type { PhysicalFlow, PhysicalObject, VisualEdge, VisualLesson, VisualNode, VisualScene } from './visual-schema';
 
 const GROQ_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -30,7 +30,7 @@ export async function generateVisualLesson(workspaceId: string, question: string
   const { workspace, chunks } = await retrieveWorkspace(workspaceId, question);
   const evidenceSentences = extractEvidenceSentences(chunks.map((chunk) => chunk.content));
   const evidence = chunks.slice(0, 6).map((chunk, index) => `[E${index + 1}] ${chunk.content.slice(0, 700)}`).join('\n\n');
-  const prompt = `You are Anima's visual lesson compiler. Use only the retrieved evidence to answer the learner by producing an executable visual program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nReturn one JSON object with this shape:\n{"title":"...","subtitle":"...","strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"camera":{"x":50,"y":50,"zoom":1.2},"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nPrefer 3 concise progressive scenes with 2 to 6 nodes each. Every edge endpoint must match a node ID in its scene. Reuse stable IDs for persistent entities. Coordinates are percentages. Camera movement must focus on the narrated subject. Animated edges must represent a real flow, causal influence, transfer, motion, or sequence. Keep narration under 65 words and synchronized with what is visible. Preserve uncertainty and never invent measurements. Output JSON only.`;
+  const prompt = `You are Anima's multimodal scene compiler. Use only the retrieved evidence to answer the learner by producing an executable visual program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nFirst choose visualMode. Use physical3d whenever the explanation concerns a tangible object, anatomy, machine, material structure, spatial system, movement, flow, or physical mechanism. Use spatial2d for microscopic or conceptual spatial processes that do not benefit from 3D. Use diagram only for genuinely abstract relationships, arguments, timelines, or institutional processes.\n\nReturn one JSON object with this shape:\n{"title":"...","subtitle":"...","visualMode":"physical3d|spatial2d|diagram","strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"renderMode":"physical3d|spatial2d|diagram","camera":{"x":50,"y":50,"zoom":1.2},"camera3d":{"position":[6,4,8],"target":[0,0,0],"autoRotate":true},"objects":[{"id":"part-1","label":"...","detail":"...","primitive":"sphere|box|cylinder|cone|torus|capsule|tube","position":[0,0,0],"scale":[1,1,1],"rotation":[0,0,0],"color":"#ef476f","opacity":1,"roughness":0.55,"metalness":0.05,"motion":"none|rotate|pulse|oscillate","cutaway":false}],"flows":[{"from":"part-1","to":"part-2","label":"...","color":"#61c7ff","speed":1,"particleCount":8}],"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nFor physical3d, model the actual subject from generic primitives: preserve the relative arrangement of important parts, use opacity or cutaway on outer shells to reveal internals, animate real moving parts, and use flows for blood, fluid, charge, heat, matter, or energy transfer. Use camera changes across scenes for overview, internal close-up, and mechanism. Do not replace physical parts with boxes in a flowchart. For diagram mode, create 2 to 6 nodes and valid edges. Prefer 3 concise progressive scenes. Every flow and edge endpoint must match an object or node ID. Reuse stable IDs for persistent entities. Keep narration under 65 words and synchronized with the visible scene. Preserve uncertainty and never invent measurements. Output JSON only.`;
 
   try {
     const data = await groqRequest({
@@ -40,7 +40,7 @@ export async function generateVisualLesson(workspaceId: string, question: string
         { role: 'user', content: prompt },
       ],
       temperature: 0.2,
-      max_completion_tokens: 2800,
+      max_completion_tokens: 3400,
       response_format: { type: 'json_object' },
     });
     const content = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
@@ -53,8 +53,11 @@ export async function generateVisualLesson(workspaceId: string, question: string
 type JsonRecord = Record<string, unknown>;
 
 const strategies = ['flow', 'timeline', 'network', 'cycle', 'comparison', 'layers'] as const;
+const visualModes = ['physical3d', 'spatial2d', 'diagram'] as const;
 const shapes = ['circle', 'rounded', 'pill'] as const;
 const colors = ['lime', 'mint', 'blue', 'amber', 'coral', 'violet'] as const;
+const primitives = ['sphere', 'box', 'cylinder', 'cone', 'torus', 'capsule', 'tube'] as const;
+const motions = ['none', 'rotate', 'pulse', 'oscillate'] as const;
 
 function record(value: unknown): JsonRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
@@ -67,6 +70,19 @@ function stringValue(value: unknown, fallback: string) {
 function numberValue(value: unknown, fallback: number, min: number, max: number) {
   const number = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
   return Math.max(min, Math.min(max, number));
+}
+
+function vector3(value: unknown, fallback: [number, number, number], min: number, max: number): [number, number, number] {
+  if (!Array.isArray(value) || value.length < 3) return fallback;
+  return [
+    numberValue(value[0], fallback[0], min, max),
+    numberValue(value[1], fallback[1], min, max),
+    numberValue(value[2], fallback[2], min, max),
+  ];
+}
+
+function colorValue(value: unknown, fallback: string) {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
 }
 
 function oneOf<T extends readonly string[]>(value: unknown, options: T, fallback: T[number]): T[number] {
@@ -134,6 +150,69 @@ function fallbackNodes(sceneIndex: number, sentences: string[]): VisualNode[] {
   });
 }
 
+function objectsFromNodes(nodes: VisualNode[], sceneIndex: number): PhysicalObject[] {
+  return nodes.map((node, index) => ({
+    id: node.id,
+    label: node.label,
+    detail: node.detail,
+    primitive: (['sphere', 'capsule', 'box'] as const)[index % 3],
+    position: [(node.x - 50) / 11, (50 - node.y) / 13, (index % 2 ? -0.6 : 0.6) + sceneIndex * 0.05],
+    scale: [0.9, 0.9, 0.9],
+    rotation: [0, 0, 0],
+    color: ['#d7ff63', '#61c7ff', '#ff8b7c', '#b9a0ff'][index % 4],
+    opacity: 0.92,
+    roughness: 0.5,
+    metalness: 0.05,
+    motion: index === 0 ? 'pulse' : 'none',
+    cutaway: false,
+  }));
+}
+
+function normalizePhysicalObjects(value: unknown, sceneIndex: number, sentences: string[], fallback: VisualNode[]) {
+  const rawObjects = Array.isArray(value) ? value.slice(0, 14) : [];
+  const usedIds = new Set<string>();
+  const objects = rawObjects.map((entry, index): PhysicalObject => {
+    const raw = record(entry);
+    let id = stringValue(raw.id, `part-${sceneIndex + 1}-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
+    if (usedIds.has(id)) id = `${id}-${index + 1}`;
+    usedIds.add(id);
+    return {
+      id,
+      label: stringValue(raw.label, `Part ${index + 1}`).slice(0, 80),
+      detail: stringValue(raw.detail, groundedSentence(sentences, sceneIndex * 3 + index, 'Grounded physical component.')),
+      primitive: oneOf(raw.primitive, primitives, 'sphere'),
+      position: vector3(raw.position, [(index - (rawObjects.length - 1) / 2) * 1.8, 0, 0], -8, 8),
+      scale: vector3(raw.scale, [1, 1, 1], 0.12, 5),
+      rotation: vector3(raw.rotation, [0, 0, 0], -Math.PI * 2, Math.PI * 2),
+      color: colorValue(raw.color, ['#d7ff63', '#61c7ff', '#ff8b7c', '#b9a0ff'][index % 4]),
+      opacity: numberValue(raw.opacity, 0.95, 0.15, 1),
+      roughness: numberValue(raw.roughness, 0.55, 0, 1),
+      metalness: numberValue(raw.metalness, 0.05, 0, 1),
+      motion: oneOf(raw.motion, motions, 'none'),
+      cutaway: raw.cutaway === true,
+    };
+  });
+  return objects.length >= 2 ? objects : objectsFromNodes(fallback, sceneIndex);
+}
+
+function normalizeFlows(value: unknown, objects: PhysicalObject[]): PhysicalFlow[] {
+  const ids = new Set(objects.map((object) => object.id));
+  const rawFlows = Array.isArray(value) ? value : [];
+  const flows = rawFlows.flatMap((entry): PhysicalFlow[] => {
+    const raw = record(entry); const from = stringValue(raw.from, ''); const to = stringValue(raw.to, '');
+    if (!ids.has(from) || !ids.has(to) || from === to) return [];
+    return [{
+      from, to,
+      label: stringValue(raw.label, 'flow').slice(0, 80),
+      color: colorValue(raw.color, '#61c7ff'),
+      speed: numberValue(raw.speed, 1, 0.2, 4),
+      particleCount: Math.round(numberValue(raw.particleCount, 7, 2, 18)),
+    }];
+  }).slice(0, 18);
+  if (flows.length) return flows;
+  return objects.slice(0, -1).map((object, index) => ({ from: object.id, to: objects[index + 1].id, label: 'flow', color: '#61c7ff', speed: 1, particleCount: 7 }));
+}
+
 function normalizeScene(value: unknown, sceneIndex: number, sentences: string[]): VisualScene {
   const raw = record(value);
   const sceneId = stringValue(raw.id, `scene-${sceneIndex + 1}`);
@@ -174,7 +253,11 @@ function normalizeScene(value: unknown, sceneIndex: number, sentences: string[])
   const fallbackNarration = [0, 1].map((offset) => groundedSentence(sentences, sceneIndex * 2 + offset, '')).filter(Boolean).join(' ');
   const narration = stringValue(raw.narration, fallbackNarration || `This scene explains ${shortLabel(groundedSentence(sentences, sceneIndex, 'the retrieved evidence'), 'the key mechanism')}.`);
   const camera = record(raw.camera);
+  const camera3d = record(raw.camera3d);
   const firstNode = completeNodes[0];
+  const renderMode = oneOf(raw.renderMode, visualModes, 'diagram');
+  const objects = normalizePhysicalObjects(raw.objects, sceneIndex, sentences, completeNodes);
+  const flows = normalizeFlows(raw.flows, objects);
   const requestedFocus = Array.isArray(raw.focusNodeIds) ? raw.focusNodeIds.filter((id): id is string => typeof id === 'string' && validIds.has(id)) : [];
   return {
     id: sceneId,
@@ -189,6 +272,14 @@ function normalizeScene(value: unknown, sceneIndex: number, sentences: string[])
     nodes: completeNodes,
     edges: completeEdges,
     focusNodeIds: requestedFocus.length ? requestedFocus : [firstNode.id],
+    renderMode,
+    camera3d: {
+      position: vector3(camera3d.position, [6, 4, 8], -20, 20),
+      target: vector3(camera3d.target, [0, 0, 0], -8, 8),
+      autoRotate: camera3d.autoRotate !== false,
+    },
+    objects,
+    flows,
   };
 }
 
@@ -198,6 +289,7 @@ function buildGroundedFallback(topic: string, question: string, sentences: strin
     title: shortLabel(question, topic),
     subtitle: `A grounded visual explanation of ${topic}`,
     strategy: 'flow',
+    visualMode: 'diagram',
     sourceSummary: 'This fallback animation is assembled directly from retrieved evidence while the AI compiler is unavailable.',
     scenes: [0, 1, 2].map((index) => normalizeScene({}, index, grounded)),
   };
@@ -207,11 +299,17 @@ function normalizeVisualLesson(value: unknown, topic: string, question: string, 
   const raw = record(value);
   const rawScenes = Array.isArray(raw.scenes) ? raw.scenes.slice(0, 3) : [];
   if (!rawScenes.length) return buildGroundedFallback(topic, question, sentences);
+  const visualMode = oneOf(raw.visualMode, visualModes, 'diagram');
+  const scenes = rawScenes.map((scene, index) => normalizeScene(scene, index, sentences)).map((scene) => ({
+    ...scene,
+    renderMode: scene.renderMode === 'diagram' && visualMode !== 'diagram' ? visualMode : scene.renderMode,
+  }));
   return {
     title: stringValue(raw.title, shortLabel(question, topic)).slice(0, 120),
     subtitle: stringValue(raw.subtitle, `A visual explanation of ${topic}`).slice(0, 180),
     strategy: oneOf(raw.strategy, strategies, 'flow'),
     sourceSummary: stringValue(raw.sourceSummary, 'The lesson is grounded in the retrieved workspace evidence.'),
-    scenes: rawScenes.map((scene, index) => normalizeScene(scene, index, sentences)),
+    visualMode,
+    scenes,
   };
 }
