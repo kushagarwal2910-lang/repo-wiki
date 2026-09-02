@@ -45,7 +45,6 @@ export async function generateVisualLesson(workspaceId: string, question: string
         messages: [{ role: 'system', content: 'Return grounded JSON only. Inspect visual coordinates precisely.' }, { role: 'user', content }],
         temperature: 0.15,
         max_completion_tokens: 2000,
-        response_format: { type: 'json_object' },
       });
       const modelContent = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
       const parsed = parseModelJson(modelContent);
