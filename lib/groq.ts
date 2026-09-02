@@ -1,5 +1,6 @@
 import { retrieveWorkspace } from './database';
-import type { PhysicalFlow, PhysicalObject, VisualEdge, VisualLesson, VisualNode, VisualScene } from './visual-schema';
+import { findVisualReferences, type VisualReferenceCandidate } from './tavily';
+import type { ImageFlow, PhysicalFlow, PhysicalObject, VisualEdge, VisualHotspot, VisualLesson, VisualNode, VisualScene } from './visual-schema';
 
 const GROQ_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -30,7 +31,26 @@ export async function generateVisualLesson(workspaceId: string, question: string
   const { workspace, chunks } = await retrieveWorkspace(workspaceId, question);
   const evidenceSentences = extractEvidenceSentences(chunks.map((chunk) => chunk.content));
   const evidence = chunks.slice(0, 6).map((chunk, index) => `[E${index + 1}] ${chunk.content.slice(0, 700)}`).join('\n\n');
-  const prompt = `You are Anima's multimodal scene compiler. Use only the retrieved evidence to answer the learner by producing an executable visual program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nFirst choose visualMode. Use physical3d whenever the explanation concerns a tangible object, anatomy, machine, material structure, spatial system, movement, flow, or physical mechanism. Use spatial2d for microscopic or conceptual spatial processes that do not benefit from 3D. Use diagram only for genuinely abstract relationships, arguments, timelines, or institutional processes.\n\nReturn one JSON object with this shape:\n{"title":"...","subtitle":"...","visualMode":"physical3d|spatial2d|diagram","strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"renderMode":"physical3d|spatial2d|diagram","camera":{"x":50,"y":50,"zoom":1.2},"camera3d":{"position":[6,4,8],"target":[0,0,0],"autoRotate":true},"objects":[{"id":"part-1","label":"...","detail":"...","primitive":"sphere|box|cylinder|cone|torus|capsule|tube","position":[0,0,0],"scale":[1,1,1],"rotation":[0,0,0],"color":"#ef476f","opacity":1,"roughness":0.55,"metalness":0.05,"motion":"none|rotate|pulse|oscillate","cutaway":false}],"flows":[{"from":"part-1","to":"part-2","label":"...","color":"#61c7ff","speed":1,"particleCount":8}],"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nFor physical3d, model the actual subject from generic primitives: preserve the relative arrangement of important parts, use opacity or cutaway on outer shells to reveal internals, animate real moving parts, and use flows for blood, fluid, charge, heat, matter, or energy transfer. Use camera changes across scenes for overview, internal close-up, and mechanism. Do not replace physical parts with boxes in a flowchart. For diagram mode, create 2 to 6 nodes and valid edges. Prefer 3 concise progressive scenes. Every flow and edge endpoint must match an object or node ID. Reuse stable IDs for persistent entities. Keep narration under 65 words and synchronized with the visible scene. Preserve uncertainty and never invent measurements. Output JSON only.`;
+  const references = await findVisualReferences(workspace.topic, question);
+  const prompt = `You are Anima's visual scene compiler. Use only the retrieved evidence to answer the learner by producing an executable visual program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nChoose the most truthful representation. Use reference2d when one supplied image accurately depicts the real subject, anatomy, artifact, place, machine, or structure. This is preferred over approximating a recognizable subject with geometric primitives. Use physical3d only for mechanisms that can be represented accurately with generated geometry. Use spatial2d for microscopic spatial processes. Use diagram only for abstract relationships, arguments, timelines, or institutions.\n\nReturn one JSON object with this shape:\n{"title":"...","subtitle":"...","visualMode":"reference2d|physical3d|spatial2d|diagram","visualAssetIndex":0,"strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"renderMode":"reference2d|physical3d|spatial2d|diagram","visualAssetIndex":0,"camera":{"x":50,"y":50,"zoom":1.2},"hotspots":[{"id":"spot-1","label":"...","detail":"...","x":50,"y":50,"color":"#d7ff63"}],"imageFlows":[{"label":"...","color":"#61c7ff","speed":1,"points":[{"x":20,"y":40},{"x":50,"y":50},{"x":80,"y":35}]}],"camera3d":{"position":[6,4,8],"target":[0,0,0],"autoRotate":true},"objects":[{"id":"part-1","label":"...","detail":"...","primitive":"sphere|box|cylinder|cone|torus|capsule|tube","position":[0,0,0],"scale":[1,1,1],"rotation":[0,0,0],"color":"#ef476f","opacity":1,"roughness":0.55,"metalness":0.05,"motion":"none|rotate|pulse|oscillate","cutaway":false}],"flows":[{"from":"part-1","to":"part-2","label":"...","color":"#61c7ff","speed":1,"particleCount":8}],"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nWhen using reference2d, inspect the chosen image carefully. Set hotspots and every imageFlow point to the actual visible feature using normalized image coordinates from 0 to 100. Use camera changes for overview, close-up, and mechanism. Never label a location you cannot identify in the image. Prefer 3 concise progressive scenes. Every endpoint must be valid. Keep narration under 65 words and synchronized with the visible scene. Preserve uncertainty and never invent measurements. Output JSON only.`;
+
+  if (references.length) {
+    try {
+      const candidateText = references.slice(0, 3).map((reference, index) => `Candidate ${index}: ${reference.description}`).join('\n');
+      const content: Array<Record<string, unknown>> = [{ type: 'text', text: `${prompt}\n\nVISUAL CANDIDATES:\n${candidateText}\nSelect only a candidate that clearly matches the subject. If none does, do not use reference2d.` }];
+      references.slice(0, 3).forEach((reference) => content.push({ type: 'image_url', image_url: { url: reference.url } }));
+      const data = await groqRequest({
+        model: 'qwen/qwen3.6-27b',
+        messages: [{ role: 'system', content: 'Return grounded JSON only. Inspect visual coordinates precisely.' }, { role: 'user', content }],
+        temperature: 0.15,
+        max_completion_tokens: 4000,
+        response_format: { type: 'json_object' },
+      });
+      const modelContent = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
+      const parsed = parseModelJson(modelContent);
+      if (Array.isArray(record(parsed).scenes)) return normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references);
+    } catch { /* Continue with the text-only compiler. */ }
+  }
 
   try {
     const data = await groqRequest({
@@ -44,7 +64,7 @@ export async function generateVisualLesson(workspaceId: string, question: string
       response_format: { type: 'json_object' },
     });
     const content = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
-    return normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences);
+    return normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, []);
   } catch {
     return buildGroundedFallback(workspace.topic, question, evidenceSentences);
   }
@@ -53,7 +73,7 @@ export async function generateVisualLesson(workspaceId: string, question: string
 type JsonRecord = Record<string, unknown>;
 
 const strategies = ['flow', 'timeline', 'network', 'cycle', 'comparison', 'layers'] as const;
-const visualModes = ['physical3d', 'spatial2d', 'diagram'] as const;
+const visualModes = ['reference2d', 'physical3d', 'spatial2d', 'diagram'] as const;
 const shapes = ['circle', 'rounded', 'pill'] as const;
 const colors = ['lime', 'mint', 'blue', 'amber', 'coral', 'violet'] as const;
 const primitives = ['sphere', 'box', 'cylinder', 'cone', 'torus', 'capsule', 'tube'] as const;
@@ -213,7 +233,36 @@ function normalizeFlows(value: unknown, objects: PhysicalObject[]): PhysicalFlow
   return objects.slice(0, -1).map((object, index) => ({ from: object.id, to: objects[index + 1].id, label: 'flow', color: '#61c7ff', speed: 1, particleCount: 7 }));
 }
 
-function normalizeScene(value: unknown, sceneIndex: number, sentences: string[]): VisualScene {
+function normalizeHotspots(value: unknown, fallback: VisualNode[]): VisualHotspot[] {
+  const rawHotspots = Array.isArray(value) ? value.slice(0, 10) : [];
+  const hotspots = rawHotspots.map((entry, index): VisualHotspot => {
+    const raw = record(entry);
+    return {
+      id: stringValue(raw.id, `hotspot-${index + 1}`).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64),
+      label: stringValue(raw.label, `Feature ${index + 1}`).slice(0, 80),
+      detail: stringValue(raw.detail, 'Visible feature identified from the reference.').slice(0, 300),
+      x: numberValue(raw.x, fallback[index % fallback.length]?.x || 50, 2, 98),
+      y: numberValue(raw.y, fallback[index % fallback.length]?.y || 50, 2, 98),
+      color: colorValue(raw.color, ['#d7ff63', '#61c7ff', '#ff8b7c', '#b9a0ff'][index % 4]),
+    };
+  });
+  return hotspots.length ? hotspots : fallback.slice(0, 4).map((node, index) => ({ id: `hotspot-${index + 1}`, label: node.label, detail: node.detail, x: node.x, y: node.y, color: ['#d7ff63', '#61c7ff', '#ff8b7c', '#b9a0ff'][index % 4] }));
+}
+
+function normalizeImageFlows(value: unknown, hotspots: VisualHotspot[]): ImageFlow[] {
+  const rawFlows = Array.isArray(value) ? value.slice(0, 8) : [];
+  const flows = rawFlows.flatMap((entry, flowIndex): ImageFlow[] => {
+    const raw = record(entry);
+    const rawPoints = Array.isArray(raw.points) ? raw.points.slice(0, 12) : [];
+    const points = rawPoints.map((point) => record(point)).map((point) => ({ x: numberValue(point.x, 50, 1, 99), y: numberValue(point.y, 50, 1, 99) }));
+    if (points.length < 2) return [];
+    return [{ label: stringValue(raw.label, `Flow ${flowIndex + 1}`).slice(0, 80), color: colorValue(raw.color, '#61c7ff'), speed: numberValue(raw.speed, 1, 0.2, 4), points }];
+  });
+  if (flows.length || hotspots.length < 2) return flows;
+  return [{ label: 'movement', color: '#61c7ff', speed: 1, points: hotspots.map(({ x, y }) => ({ x, y })) }];
+}
+
+function normalizeScene(value: unknown, sceneIndex: number, sentences: string[], references: VisualReferenceCandidate[] = [], defaultAssetIndex = -1): VisualScene {
   const raw = record(value);
   const sceneId = stringValue(raw.id, `scene-${sceneIndex + 1}`);
   const rawNodes = Array.isArray(raw.nodes) ? raw.nodes.slice(0, 10) : [];
@@ -255,9 +304,14 @@ function normalizeScene(value: unknown, sceneIndex: number, sentences: string[])
   const camera = record(raw.camera);
   const camera3d = record(raw.camera3d);
   const firstNode = completeNodes[0];
-  const renderMode = oneOf(raw.renderMode, visualModes, 'diagram');
+  const requestedRenderMode = oneOf(raw.renderMode, visualModes, 'diagram');
+  const requestedAssetIndex = Math.round(numberValue(raw.visualAssetIndex, defaultAssetIndex, -1, Math.max(-1, references.length - 1)));
+  const visualAsset = requestedAssetIndex >= 0 ? references[requestedAssetIndex] : undefined;
+  const renderMode = requestedRenderMode === 'reference2d' && !visualAsset ? 'physical3d' : requestedRenderMode;
   const objects = normalizePhysicalObjects(raw.objects, sceneIndex, sentences, completeNodes);
   const flows = normalizeFlows(raw.flows, objects);
+  const hotspots = normalizeHotspots(raw.hotspots, completeNodes);
+  const imageFlows = normalizeImageFlows(raw.imageFlows, hotspots);
   const requestedFocus = Array.isArray(raw.focusNodeIds) ? raw.focusNodeIds.filter((id): id is string => typeof id === 'string' && validIds.has(id)) : [];
   return {
     id: sceneId,
@@ -280,6 +334,9 @@ function normalizeScene(value: unknown, sceneIndex: number, sentences: string[])
     },
     objects,
     flows,
+    visualAsset,
+    hotspots,
+    imageFlows,
   };
 }
 
@@ -291,16 +348,18 @@ function buildGroundedFallback(topic: string, question: string, sentences: strin
     strategy: 'flow',
     visualMode: 'diagram',
     sourceSummary: 'This fallback animation is assembled directly from retrieved evidence while the AI compiler is unavailable.',
-    scenes: [0, 1, 2].map((index) => normalizeScene({}, index, grounded)),
+    scenes: [0, 1, 2].map((index) => normalizeScene({}, index, grounded, [], -1)),
   };
 }
 
-function normalizeVisualLesson(value: unknown, topic: string, question: string, sentences: string[]): VisualLesson {
+function normalizeVisualLesson(value: unknown, topic: string, question: string, sentences: string[], references: VisualReferenceCandidate[]): VisualLesson {
   const raw = record(value);
   const rawScenes = Array.isArray(raw.scenes) ? raw.scenes.slice(0, 3) : [];
   if (!rawScenes.length) return buildGroundedFallback(topic, question, sentences);
-  const visualMode = oneOf(raw.visualMode, visualModes, 'diagram');
-  const scenes = rawScenes.map((scene, index) => normalizeScene(scene, index, sentences)).map((scene) => ({
+  const requestedVisualMode = oneOf(raw.visualMode, visualModes, 'diagram');
+  const defaultAssetIndex = Math.round(numberValue(raw.visualAssetIndex, references.length ? 0 : -1, -1, Math.max(-1, references.length - 1)));
+  const visualMode = requestedVisualMode === 'reference2d' && defaultAssetIndex < 0 ? 'physical3d' : requestedVisualMode;
+  const scenes = rawScenes.map((scene, index) => normalizeScene(scene, index, sentences, references, defaultAssetIndex)).map((scene) => ({
     ...scene,
     renderMode: scene.renderMode === 'diagram' && visualMode !== 'diagram' ? visualMode : scene.renderMode,
   }));

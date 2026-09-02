@@ -10,6 +10,13 @@ type TavilyResult = {
   content?: string;
   raw_content?: string;
   score?: number;
+  images?: Array<string | { url?: string; description?: string }>;
+};
+
+export type VisualReferenceCandidate = {
+  url: string;
+  description: string;
+  sourceUrl?: string;
 };
 
 type DiscoveredSource = ResearchSource & { content: string; score: number };
@@ -74,6 +81,45 @@ async function search(query: string, depth: 'basic' | 'advanced' = 'advanced') {
     include_raw_content: false,
   });
   return Array.isArray(data.results) ? data.results as TavilyResult[] : [];
+}
+
+function safeImageUrl(value: unknown) {
+  if (typeof value !== 'string') return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch { return ''; }
+}
+
+export async function findVisualReferences(topic: string, question: string): Promise<VisualReferenceCandidate[]> {
+  try {
+    const data = await tavilyRequest(TAVILY_SEARCH, {
+      query: `${topic} ${question} accurate educational diagram cutaway anatomy structure labeled illustration`,
+      search_depth: 'basic',
+      max_results: 8,
+      include_answer: false,
+      include_images: true,
+      include_image_descriptions: true,
+      include_raw_content: false,
+    });
+    const results = Array.isArray(data.results) ? data.results as TavilyResult[] : [];
+    const candidates: VisualReferenceCandidate[] = [];
+    const seen = new Set<string>();
+    const add = (image: unknown, sourceUrl?: string) => {
+      const entry = typeof image === 'string' ? { url: image, description: '' } : image && typeof image === 'object' ? image as { url?: string; description?: string } : {};
+      const url = safeImageUrl(entry.url);
+      if (!url || seen.has(url) || /(?:logo|favicon|avatar|icon|banner)/i.test(`${url} ${entry.description || ''}`)) return;
+      seen.add(url);
+      candidates.push({ url, description: (entry.description || `${topic} educational reference`).slice(0, 300), sourceUrl });
+    };
+    if (Array.isArray(data.images)) data.images.forEach((image) => add(image));
+    for (const result of results) {
+      if (Array.isArray(result.images)) result.images.forEach((image) => add(image, result.url));
+    }
+    return candidates.slice(0, 5);
+  } catch {
+    return [];
+  }
 }
 
 function rankAndDiversify(results: TavilyResult[]) {

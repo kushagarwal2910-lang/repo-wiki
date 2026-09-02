@@ -55,6 +55,28 @@ export type PhysicalFlow = {
   particleCount: number;
 };
 
+export type VisualAsset = {
+  url: string;
+  description: string;
+  sourceUrl?: string;
+};
+
+export type VisualHotspot = {
+  id: string;
+  label: string;
+  detail: string;
+  x: number;
+  y: number;
+  color: string;
+};
+
+export type ImageFlow = {
+  label: string;
+  color: string;
+  speed: number;
+  points: Array<{ x: number; y: number }>;
+};
+
 export type VisualScene = {
   id: string;
   title: string;
@@ -64,7 +86,7 @@ export type VisualScene = {
   nodes: VisualNode[];
   edges: VisualEdge[];
   focusNodeIds: string[];
-  renderMode: 'physical3d' | 'spatial2d' | 'diagram';
+  renderMode: 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
   camera3d: {
     position: [number, number, number];
     target: [number, number, number];
@@ -72,6 +94,9 @@ export type VisualScene = {
   };
   objects: PhysicalObject[];
   flows: PhysicalFlow[];
+  visualAsset?: VisualAsset;
+  hotspots: VisualHotspot[];
+  imageFlows: ImageFlow[];
 };
 
 export type VisualLesson = {
@@ -79,7 +104,7 @@ export type VisualLesson = {
   subtitle: string;
   strategy: 'flow' | 'timeline' | 'network' | 'cycle' | 'comparison' | 'layers';
   sourceSummary: string;
-  visualMode: 'physical3d' | 'spatial2d' | 'diagram';
+  visualMode: 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
   scenes: VisualScene[];
 };
 
