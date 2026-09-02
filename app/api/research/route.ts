@@ -1,4 +1,4 @@
-import { buildResearchWorkspace } from '@/lib/groq';
+import { buildResearchWorkspace } from '@/lib/tavily';
 
 export async function POST(request: Request) {
   try {

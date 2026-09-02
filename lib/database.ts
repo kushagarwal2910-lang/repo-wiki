@@ -24,7 +24,9 @@ export async function saveWorkspace(input: {
     ...input.sources.map((source) => db.prepare('INSERT INTO sources (id, workspace_id, title, url, content, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(source.id, input.id, source.title, source.url, source.content, now)),
     ...input.chunks.map((chunk) => db.prepare('INSERT INTO chunks (id, workspace_id, source_id, content, created_at) VALUES (?, ?, ?, ?, ?)').bind(chunk.id, input.id, chunk.sourceId, chunk.content, now)),
   ];
-  await db.batch(statements);
+  for (let index = 0; index < statements.length; index += 50) {
+    await db.batch(statements.slice(index, index + 50));
+  }
 }
 
 function searchTerms(question: string) {
