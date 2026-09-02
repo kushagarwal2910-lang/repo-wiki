@@ -37,14 +37,14 @@ export async function generateVisualLesson(workspaceId: string, question: string
 
   if (references.length) {
     try {
-      const candidateText = references.slice(0, 3).map((reference, index) => `Candidate ${index}: ${reference.description}`).join('\n');
+      const candidateText = references.slice(0, 1).map((reference, index) => `Candidate ${index}: ${reference.description}`).join('\n');
       const content: Array<Record<string, unknown>> = [{ type: 'text', text: `${prompt}\n\nVISUAL CANDIDATES:\n${candidateText}\nSelect only a candidate that clearly matches the subject. If none does, do not use reference2d.` }];
-      references.slice(0, 3).forEach((reference) => content.push({ type: 'image_url', image_url: { url: reference.url } }));
+      references.slice(0, 1).forEach((reference) => content.push({ type: 'image_url', image_url: { url: reference.url } }));
       const data = await groqRequest({
         model: 'qwen/qwen3.6-27b',
         messages: [{ role: 'system', content: 'Return grounded JSON only. Inspect visual coordinates precisely.' }, { role: 'user', content }],
         temperature: 0.15,
-        max_completion_tokens: 4000,
+        max_completion_tokens: 2000,
         response_format: { type: 'json_object' },
       });
       const modelContent = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';

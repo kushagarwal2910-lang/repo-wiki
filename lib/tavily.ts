@@ -94,7 +94,7 @@ function safeImageUrl(value: unknown) {
 export async function findVisualReferences(topic: string, question: string): Promise<VisualReferenceCandidate[]> {
   try {
     const data = await tavilyRequest(TAVILY_SEARCH, {
-      query: `${topic} ${question} accurate educational diagram cutaway anatomy structure labeled illustration`,
+      query: `${topic} ${question} accurate educational diagram cutaway anatomy structure labeled illustration -logo -banner -social`,
       search_depth: 'basic',
       max_results: 8,
       include_answer: false,
@@ -108,7 +108,7 @@ export async function findVisualReferences(topic: string, question: string): Pro
     const add = (image: unknown, sourceUrl?: string) => {
       const entry = typeof image === 'string' ? { url: image, description: '' } : image && typeof image === 'object' ? image as { url?: string; description?: string } : {};
       const url = safeImageUrl(entry.url);
-      if (!url || seen.has(url) || /(?:logo|favicon|avatar|icon|banner)/i.test(`${url} ${entry.description || ''}`)) return;
+      if (!url || seen.has(url) || /(?:logo|favicon|avatar|icon|banner|meta[_-]?image|open[_-]?graph|og[_-]?image|social[_-]?(?:card|share|image)|share[_-]?image|header[_-]?image|brandmark)/i.test(`${url} ${entry.description || ''}`)) return;
       seen.add(url);
       candidates.push({ url, description: (entry.description || `${topic} educational reference`).slice(0, 300), sourceUrl });
     };
@@ -116,7 +116,16 @@ export async function findVisualReferences(topic: string, question: string): Pro
       if (Array.isArray(result.images)) result.images.forEach((image) => add(image, result.url));
     }
     if (Array.isArray(data.images)) data.images.forEach((image) => add(image));
-    return candidates.slice(0, 5);
+    const terms = [...new Set(`${topic} ${question}`.toLowerCase().match(/[a-z0-9]{4,}/g) || [])].filter((term) => !['what', 'show', 'does', 'with', 'through', 'about', 'exactly'].includes(term));
+    const visualScore = (candidate: VisualReferenceCandidate) => {
+      const text = `${candidate.url} ${candidate.description} ${candidate.sourceUrl || ''}`.toLowerCase();
+      let score = terms.reduce((total, term) => total + (text.includes(term) ? 2 : 0), 0);
+      if (/(diagram|anatom|cutaway|cross.section|structure|schematic|illustration|labeled|model)/.test(text)) score += 5;
+      if (/(wikimedia|wikipedia|nih\.gov|cdc\.gov|\.edu\/|\.ac\.)/.test(text)) score += 2;
+      if (/\.(?:jpe?g|png|webp)(?:\?|$)/.test(candidate.url)) score += 1;
+      return score;
+    };
+    return candidates.sort((a, b) => visualScore(b) - visualScore(a)).slice(0, 5);
   } catch {
     return [];
   }
