@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, ArrowRight, BookOpen, Check, CircleStop, Database, ExternalLink,
   FileSearch, Globe2, Layers3, LoaderCircle, Mic2, Pause, Play, Plus,
@@ -95,23 +95,35 @@ export default function Home() {
   const [lesson, setLesson] = useState<VisualLesson | null>(null);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [sceneProgress, setSceneProgress] = useState(0);
+  const [voiceAvailable, setVoiceAvailable] = useState(true);
   const [error, setError] = useState('');
-  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
   const scene = lesson?.scenes[sceneIndex];
 
   useEffect(() => {
     if (!playing || !scene || typeof window === 'undefined') return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(scene.narration);
-    utterance.rate = 0.96; utterance.pitch = 1;
-    utterance.onend = () => {
+    const duration = Math.max(5, scene.durationSeconds) * 1000;
+    const startedAt = performance.now();
+    setSceneProgress(0);
+
+    if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(scene.narration);
+        utterance.rate = 0.96; utterance.pitch = 1;
+        window.speechSynthesis.speak(utterance);
+        setVoiceAvailable(true);
+      } catch { setVoiceAvailable(false); }
+    } else setVoiceAvailable(false);
+
+    const progressTimer = window.setInterval(() => setSceneProgress(Math.min(100, ((performance.now() - startedAt) / duration) * 100)), 100);
+    const sceneTimer = window.setTimeout(() => {
       if (!lesson) return;
       if (sceneIndex < lesson.scenes.length - 1) setSceneIndex((value) => value + 1);
-      else setPlaying(false);
-    };
-    speechRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
-    return () => { utterance.onend = null; window.speechSynthesis.cancel(); };
+      else { setSceneProgress(100); setPlaying(false); }
+    }, duration);
+
+    return () => { window.clearInterval(progressTimer); window.clearTimeout(sceneTimer); window.speechSynthesis?.cancel(); };
   }, [playing, sceneIndex, scene, lesson]);
 
   useEffect(() => {
@@ -147,7 +159,7 @@ export default function Home() {
 
   async function askQuestion(event: FormEvent) {
     event.preventDefault(); if (!workspace || question.trim().length < 2) return;
-    setPhase('generating'); setError(''); setPlaying(false);
+    setPhase('generating'); setError(''); setPlaying(false); setSceneProgress(0);
     try {
       const response = await fetch('/api/lesson', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workspaceId: workspace.workspaceId, question: question.trim() }) });
       const data = await response.json();
@@ -157,11 +169,11 @@ export default function Home() {
   }
 
   function reset() {
-    window.speechSynthesis?.cancel(); setPlaying(false); setWorkspace(null); setLesson(null); setQuestion(''); setError(''); setPhase('topic');
+    window.speechSynthesis?.cancel(); setPlaying(false); setSceneProgress(0); setWorkspace(null); setLesson(null); setQuestion(''); setError(''); setPhase('topic');
   }
 
   const sourceCount = workspace?.sources.length || 0;
-  const progress = lesson ? ((sceneIndex + 1) / lesson.scenes.length) * 100 : 0;
+  const progress = lesson ? ((sceneIndex + sceneProgress / 100) / lesson.scenes.length) * 100 : 0;
   const status = useMemo(() => phase === 'researching' ? 'Researching' : phase === 'generating' ? 'Compiling animation' : workspace ? `${sourceCount} sources indexed` : 'Ready for any topic', [phase, workspace, sourceCount]);
 
   return (
@@ -228,8 +240,21 @@ export default function Home() {
             {lesson && scene && phase === 'lesson' && (
               <div className="flex flex-1 flex-col overflow-hidden">
                 <div className="flex items-start justify-between border-b border-white/10 px-5 py-4 md:px-7"><div><div className="text-[10px] uppercase tracking-[.18em] text-[#d7ff63]/65">Generated {scene.renderMode === 'physical3d' ? 'physical 3D' : scene.renderMode === 'spatial2d' ? 'spatial' : lesson.strategy} animation</div><h1 className="mt-1 text-xl font-semibold tracking-[-.03em] md:text-2xl">{lesson.title}</h1><p className="mt-1 text-xs text-emerald-50/35">{lesson.subtitle}</p></div><Button variant="outline" onClick={() => { setLesson(null); setPlaying(false); setPhase('ready'); }} className="border-white/10 bg-white/[.03] text-emerald-50/60"><Plus /> Ask another</Button></div>
-                <div className="relative min-h-[420px] flex-1 overflow-hidden bg-[#07130f]">{scene.renderMode === 'physical3d' ? <PhysicalSceneView key={scene.id} scene={scene} /> : <CameraScene key={scene.id} scene={scene} />}<div className="pointer-events-none absolute left-5 top-5 rounded-xl border border-white/10 bg-[#081510]/85 px-3 py-2 backdrop-blur"><div className="text-[9px] uppercase tracking-[.16em] text-emerald-50/35">Scene {sceneIndex + 1} of {lesson.scenes.length}</div><div className="mt-1 text-sm font-medium">{scene.title}</div>{scene.renderMode === 'physical3d' && <div className="mt-1 text-[9px] text-emerald-50/35">Drag to rotate · scroll to zoom</div>}</div></div>
-                <div className="border-t border-white/10 bg-[#081510] p-4 md:px-6"><div className="mx-auto flex max-w-5xl items-center gap-3"><Button size="icon-lg" onClick={() => setPlaying((value) => !value)} className="rounded-xl bg-[#d7ff63] text-[#08130f] hover:bg-[#caff42]" aria-label={playing ? 'Pause lesson' : 'Play lesson'}>{playing ? <Pause /> : <Play className="fill-current" />}</Button><div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[.14em] text-emerald-50/35"><Mic2 className="size-3 text-[#d7ff63]" /> Live narration</div><p className="mt-1 truncate text-sm text-emerald-50/75">{scene.narration}</p><div className="mt-2 h-1 overflow-hidden rounded-full bg-white/8"><div className="h-full bg-gradient-to-r from-[#d7ff63] to-[#64e9ae] transition-all duration-700" style={{ width: `${progress}%` }} /></div></div><Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); setSceneIndex(Math.max(0, sceneIndex - 1)); }} disabled={sceneIndex === 0} className="text-emerald-50/40"><ArrowLeft /></Button><Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); setSceneIndex(Math.min(lesson.scenes.length - 1, sceneIndex + 1)); }} disabled={sceneIndex === lesson.scenes.length - 1} className="text-emerald-50/40"><ArrowRight /></Button><Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); }} className="hidden text-emerald-50/40 sm:inline-flex" aria-label="Stop voice"><CircleStop /></Button><Volume2 className="hidden size-4 text-emerald-50/25 md:block" /></div><p className="mx-auto mt-3 max-w-5xl truncate text-[10px] text-emerald-50/25">{lesson.sourceSummary}</p></div>
+                <div className="relative min-h-[420px] flex-1 overflow-hidden bg-[#07130f]">
+                  {scene.renderMode === 'physical3d' ? <PhysicalSceneView key={scene.id} scene={scene} /> : <CameraScene key={scene.id} scene={scene} />}
+                  <div className="pointer-events-none absolute left-5 top-5 rounded-xl border border-white/10 bg-[#081510]/85 px-3 py-2 backdrop-blur"><div className="text-[9px] uppercase tracking-[.16em] text-emerald-50/35">Scene {sceneIndex + 1} of {lesson.scenes.length}</div><div className="mt-1 text-sm font-medium">{scene.title}</div>{scene.renderMode === 'physical3d' && <div className="mt-1 text-[9px] text-emerald-50/35">Drag to rotate · scroll to zoom</div>}</div>
+                  <div className="pointer-events-none absolute right-5 bottom-5 flex items-center gap-2 rounded-full border border-[#d7ff63]/15 bg-[#081510]/85 px-3 py-1.5 text-[9px] uppercase tracking-[.16em] text-[#d7ff63]"><span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-[#d7ff63] opacity-50" /><span className="relative inline-flex size-2 rounded-full bg-[#d7ff63]" /></span>Live animation</div>
+                </div>
+                <div className="border-t border-white/10 bg-[#081510] p-4 md:px-6">
+                  <div className="mx-auto flex max-w-5xl items-center gap-3">
+                    <Button onClick={() => setPlaying((value) => !value)} className="rounded-xl bg-[#d7ff63] px-4 text-[#08130f] hover:bg-[#caff42]" aria-label={playing ? 'Pause narrated lesson' : 'Play narrated lesson'}>{playing ? <><Pause /> Pause</> : <><Play className="fill-current" /> Play narration</>}</Button>
+                    <div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-[10px] uppercase tracking-[.14em] text-emerald-50/35"><Mic2 className="size-3 text-[#d7ff63]" /> {voiceAvailable ? 'Voice + synchronized captions' : 'Synchronized captions'}</div><p className="mt-1 line-clamp-2 text-sm leading-5 text-emerald-50/75">{scene.narration}</p><div className="mt-2 h-1 overflow-hidden rounded-full bg-white/8"><div className="h-full bg-gradient-to-r from-[#d7ff63] to-[#64e9ae] transition-[width] duration-100" style={{ width: `${progress}%` }} /></div></div>
+                    <Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); setSceneProgress(0); setSceneIndex(Math.max(0, sceneIndex - 1)); }} disabled={sceneIndex === 0} className="text-emerald-50/40" aria-label="Previous scene"><ArrowLeft /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); setSceneProgress(0); setSceneIndex(Math.min(lesson.scenes.length - 1, sceneIndex + 1)); }} disabled={sceneIndex === lesson.scenes.length - 1} className="text-emerald-50/40" aria-label="Next scene"><ArrowRight /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => { window.speechSynthesis.cancel(); setPlaying(false); setSceneProgress(0); }} className="hidden text-emerald-50/40 sm:inline-flex" aria-label="Stop narration"><CircleStop /></Button><Volume2 className="hidden size-4 text-emerald-50/25 md:block" />
+                  </div>
+                  <p className="mx-auto mt-3 max-w-5xl truncate text-[10px] text-emerald-50/25">{lesson.sourceSummary}</p>
+                </div>
               </div>
             )}
           </section>
