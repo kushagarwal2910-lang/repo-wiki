@@ -51,7 +51,6 @@ export function VectorSceneView({ scene }: { scene: VisualScene }) {
   const layers = scene.vectorLayers;
 
   useEffect(() => {
-    setFocused(false);
     const frame = requestAnimationFrame(() => setFocused(true));
     return () => cancelAnimationFrame(frame);
   }, [scene.id]);
@@ -62,8 +61,8 @@ export function VectorSceneView({ scene }: { scene: VisualScene }) {
     : 'translate(0 0) scale(1)';
 
   return (
-    <div className="relative h-full min-h-[420px] w-full overflow-hidden bg-[radial-gradient(circle_at_50%_46%,#14362a_0%,#07140f_54%,#040c09_100%)]" role="img" aria-label={`${scene.title}, generated executable vector animation`}>
-      <svg className="h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+    <div className="relative h-full min-h-[420px] w-full overflow-hidden bg-[radial-gradient(circle_at_50%_46%,#14362a_0%,#07140f_54%,#040c09_100%)]">
+      <svg className="h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${scene.title}, generated executable vector animation`}>
         <defs>
           <pattern id={`vector-grid-${safeId}`} width="5" height="5" patternUnits="userSpaceOnUse"><path d="M 5 0 L 0 0 0 5" fill="none" stroke="#d7ff63" strokeOpacity=".035" strokeWidth=".16" /></pattern>
           <filter id={`vector-glow-${safeId}`} x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="1.1" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>

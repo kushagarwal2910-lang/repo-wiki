@@ -32,7 +32,7 @@ export async function generateVisualLesson(workspaceId: string, question: string
   const evidenceSentences = extractEvidenceSentences(chunks.map((chunk) => chunk.content));
   const evidence = chunks.slice(0, 6).map((chunk, index) => `[E${index + 1}] ${chunk.content.slice(0, 700)}`).join('\n\n');
   const references = await findVisualReferences(workspace.topic, question);
-  const prompt = `You are Anima's visual code compiler. Use only the retrieved evidence to answer the learner by producing an executable animation program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nThe supplied image is a PRIVATE SHAPE REFERENCE only. Never display, embed, cite, or return that image. Inspect it to trace the real subject into custom vector contours. Choose vector2d for anatomy, organisms, artifacts, places, machines, structures, and spatial mechanisms when you can trace at least three recognizable layers. Use diagram only for abstract relationships, arguments, timelines, institutions, or when physical contours cannot be traced reliably. Do not approximate recognizable subjects with circles, boxes, spheres, or generic cards.\n\nReturn one JSON object with this shape:\n{"title":"...","subtitle":"...","visualMode":"vector2d|diagram","strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"renderMode":"vector2d|diagram","camera":{"x":50,"y":50,"zoom":1.2},"vectorLayers":[{"id":"outer-shape","label":"...","detail":"...","points":[{"x":42,"y":12},{"x":60,"y":15},{"x":76,"y":34},{"x":68,"y":78},{"x":45,"y":91},{"x":25,"y":55}],"closed":true,"fill":"#d94b64","stroke":"#ffb2be","opacity":0.9,"motion":"none|pulse|contract|rotate|oscillate|open-close","emphasis":1}],"hotspots":[{"id":"spot-1","label":"...","detail":"...","x":50,"y":50,"color":"#d7ff63"}],"imageFlows":[{"label":"...","color":"#61c7ff","speed":1,"points":[{"x":20,"y":40},{"x":50,"y":50},{"x":80,"y":35}]}],"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nFor vector2d, trace the subject silhouette and important internal components as 3 to 6 layered contours with 5 to 12 points each. Coordinates are normalized from 0 to 100 relative to the hidden reference image. Preserve the subject's proportions and spatial arrangement. Use exactly 3 progressive scenes and animate real behavior: contraction, valve opening, rotation, oscillation, moving material, energy, blood, fluid, ions, or signal flow. imageFlows are executable particle paths, not image annotations. Change camera coordinates for overview, close-up, and mechanism. Keep narration under 55 words and synchronized with visible motion. Preserve uncertainty and never invent measurements. Output compact JSON only.`;
+  const prompt = `You are Anima's visual code compiler. Use only the retrieved evidence to answer the learner with an executable animation program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nThe supplied image is a PRIVATE SHAPE REFERENCE only. Never display, embed, cite, or return it. If it clearly depicts the physical subject, trace its silhouette and real internal parts into a detailed reusable vector model. Do not simplify anatomy, organisms, artifacts, machines, or structures into ellipses, rectangles, spheres, or generic symbols. Use diagram for abstract relationships, arguments, timelines, institutions, or an unreliable reference.\n\nReturn compact JSON shaped like:\n{"title":"...","subtitle":"...","visualMode":"vector2d|diagram","strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","vectorLayers":[{"id":"real-part-name","label":"...","detail":"...","points":[{"x":42,"y":12},{"x":60,"y":15}],"closed":true,"fill":"#d94b64","stroke":"#ffb2be","opacity":0.9,"motion":"none|pulse|contract|rotate|oscillate|open-close","emphasis":1}],"scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"renderMode":"vector2d|diagram","camera":{"x":50,"y":50,"zoom":1.1},"hotspots":[{"id":"spot-1","label":"...","detail":"...","x":50,"y":50,"color":"#d7ff63"}],"imageFlows":[{"label":"...","color":"#61c7ff","speed":1,"points":[{"x":20,"y":40},{"x":50,"y":50},{"x":80,"y":35}]}],"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nFor vector2d, vectorLayers is a single shared model: 6 to 10 meaningfully named physical parts. Use 10 to 24 carefully placed points for the main irregular silhouette and 5 to 16 for each real internal part. Follow visible asymmetry, curvature, proportion, overlap, and orientation in the reference; never use a generic oval as the main silhouette. Coordinates are 0..100. Produce exactly 3 progressive scenes that reuse this model. Animate real behavior with layer motion and scene-specific particle paths. Change camera coordinates for overview, close-up, and mechanism. Keep narration under 55 words and synchronized with visible motion. Preserve uncertainty and never invent measurements. Output JSON only.`;
 
   if (references.length) {
     try {
@@ -47,7 +47,7 @@ export async function generateVisualLesson(workspaceId: string, question: string
       });
       const modelContent = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
       const parsed = parseModelJson(modelContent);
-      if (Array.isArray(record(parsed).scenes)) return finalizeExecutableLesson(normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references));
+      if (Array.isArray(record(parsed).scenes)) return finalizeExecutableLesson(normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references), true);
     } catch (error) { console.warn('Vision compiler unavailable; using deterministic reference planning.', error instanceof Error ? error.message : 'unknown error'); }
   }
 
@@ -63,10 +63,10 @@ export async function generateVisualLesson(workspaceId: string, question: string
       response_format: { type: 'json_object' },
     });
     const content = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
-    return finalizeExecutableLesson(normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, references));
+    return finalizeExecutableLesson(normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, references), references.length > 0);
   } catch (error) {
     console.warn('Text compiler unavailable; using grounded fallback.', error instanceof Error ? error.message : 'unknown error');
-    return finalizeExecutableLesson(buildGroundedFallback(workspace.topic, question, evidenceSentences));
+    return finalizeExecutableLesson(buildGroundedFallback(workspace.topic, question, evidenceSentences), false);
   }
 }
 
@@ -111,7 +111,7 @@ function oneOf<T extends readonly string[]>(value: unknown, options: T, fallback
 }
 
 function cleanSentence(value: string) {
-  return value.replace(/https?:\/\/\S+/g, '').replace(/[#*_`>|\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  return value.replace(/https?:\/\/\S+/g, '').replace(/[#*_`>|]/g, ' ').replaceAll('[', ' ').replaceAll(']', ' ').replace(/\s+/g, ' ').trim();
 }
 
 function extractEvidenceSentences(contents: string[]) {
@@ -264,11 +264,11 @@ function normalizeImageFlows(value: unknown, hotspots: VisualHotspot[]): ImageFl
 }
 
 function normalizeVectorLayers(value: unknown): VectorLayer[] {
-  const rawLayers = Array.isArray(value) ? value.slice(0, 12) : [];
+  const rawLayers = Array.isArray(value) ? value.slice(0, 14) : [];
   const usedIds = new Set<string>();
   return rawLayers.flatMap((entry, layerIndex): VectorLayer[] => {
     const raw = record(entry);
-    const rawPoints = Array.isArray(raw.points) ? raw.points.slice(0, 24) : [];
+    const rawPoints = Array.isArray(raw.points) ? raw.points.slice(0, 30) : [];
     const points = rawPoints.map((point) => record(point)).map((point) => ({ x: numberValue(point.x, 50, 1, 99), y: numberValue(point.y, 50, 1, 99) }));
     const closed = raw.closed !== false;
     if (points.length < (closed ? 3 : 2)) return [];
@@ -386,11 +386,13 @@ function normalizeVisualLesson(value: unknown, topic: string, question: string, 
   const raw = record(value);
   const rawScenes = Array.isArray(raw.scenes) ? raw.scenes.slice(0, 3) : [];
   if (!rawScenes.length) return buildGroundedFallback(topic, question, sentences);
+  const sharedVectorLayers = normalizeVectorLayers(raw.vectorLayers);
   const requestedVisualMode = oneOf(raw.visualMode, visualModes, 'diagram');
   const defaultAssetIndex = Math.round(numberValue(raw.visualAssetIndex, references.length ? 0 : -1, -1, Math.max(-1, references.length - 1)));
   const visualMode = requestedVisualMode === 'reference2d' && defaultAssetIndex < 0 ? 'physical3d' : requestedVisualMode;
   const scenes = rawScenes.map((scene, index) => normalizeScene(scene, index, sentences, references, defaultAssetIndex)).map((scene) => ({
     ...scene,
+    vectorLayers: scene.vectorLayers.length >= 3 ? scene.vectorLayers : sharedVectorLayers,
     renderMode: scene.renderMode === 'diagram' && visualMode !== 'diagram' ? visualMode : scene.renderMode,
   }));
   return {
@@ -403,10 +405,19 @@ function normalizeVisualLesson(value: unknown, topic: string, question: string, 
   };
 }
 
-function finalizeExecutableLesson(lesson: VisualLesson): VisualLesson {
+function hasDetailedVectorModel(layers: VectorLayer[]) {
+  const closed = layers.filter((layer) => layer.closed);
+  const totalPoints = layers.reduce((sum, layer) => sum + layer.points.length, 0);
+  const detailedContours = closed.filter((layer) => layer.points.length >= 8).length;
+  const mainContourPoints = Math.max(0, ...closed.map((layer) => layer.points.length));
+  const uniquePoints = new Set(layers.flatMap((layer) => layer.points.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`))).size;
+  return layers.length >= 5 && closed.length >= 3 && detailedContours >= 2 && mainContourPoints >= 10 && totalPoints >= 42 && uniquePoints >= 34;
+}
+
+function finalizeExecutableLesson(lesson: VisualLesson, groundedByVisualReference: boolean): VisualLesson {
   let vectorScenes = 0;
   const scenes = lesson.scenes.map((scene) => {
-    const useVector = scene.renderMode !== 'diagram' && scene.vectorLayers.length >= 3;
+    const useVector = groundedByVisualReference && scene.renderMode !== 'diagram' && hasDetailedVectorModel(scene.vectorLayers);
     if (useVector) vectorScenes += 1;
     return {
       ...scene,
