@@ -1,5 +1,6 @@
 import { retrieveWorkspace } from './database';
 import { findVisualReferences, type VisualReferenceCandidate } from './tavily';
+import { createVisualProxyUrl } from './visual-proxy';
 import type { ImageFlow, PhysicalFlow, PhysicalObject, VectorLayer, VisualEdge, VisualHotspot, VisualLesson, VisualNode, VisualScene } from './visual-schema';
 
 const GROQ_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
@@ -47,7 +48,7 @@ export async function generateVisualLesson(workspaceId: string, question: string
       });
       const modelContent = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
       const parsed = parseModelJson(modelContent);
-      if (Array.isArray(record(parsed).scenes)) return finalizeExecutableLesson(normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references), true);
+      if (Array.isArray(record(parsed).scenes)) return finalizeExecutableLesson(normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references), references);
     } catch (error) { console.warn('Vision compiler unavailable; using deterministic reference planning.', error instanceof Error ? error.message : 'unknown error'); }
   }
 
@@ -63,10 +64,10 @@ export async function generateVisualLesson(workspaceId: string, question: string
       response_format: { type: 'json_object' },
     });
     const content = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
-    return finalizeExecutableLesson(normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, references), references.length > 0);
+    return finalizeExecutableLesson(normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, references), references);
   } catch (error) {
     console.warn('Text compiler unavailable; using grounded fallback.', error instanceof Error ? error.message : 'unknown error');
-    return finalizeExecutableLesson(buildGroundedFallback(workspace.topic, question, evidenceSentences), false);
+    return finalizeExecutableLesson(buildGroundedFallback(workspace.topic, question, evidenceSentences), []);
   }
 }
 
@@ -414,15 +415,16 @@ function hasDetailedVectorModel(layers: VectorLayer[]) {
   return layers.length >= 5 && closed.length >= 3 && detailedContours >= 2 && mainContourPoints >= 10 && totalPoints >= 42 && uniquePoints >= 34;
 }
 
-function finalizeExecutableLesson(lesson: VisualLesson, groundedByVisualReference: boolean): VisualLesson {
+async function finalizeExecutableLesson(lesson: VisualLesson, references: VisualReferenceCandidate[]): Promise<VisualLesson> {
+  const proxyUrl = references[0] ? await createVisualProxyUrl(references[0].url) : undefined;
   let vectorScenes = 0;
   const scenes = lesson.scenes.map((scene) => {
-    const useVector = groundedByVisualReference && scene.renderMode !== 'diagram' && hasDetailedVectorModel(scene.vectorLayers);
+    const useVector = Boolean(proxyUrl) && scene.renderMode !== 'diagram' && (hasDetailedVectorModel(scene.vectorLayers) || scene.vectorLayers.length >= 3);
     if (useVector) vectorScenes += 1;
     return {
       ...scene,
       renderMode: useVector ? 'vector2d' as const : 'diagram' as const,
-      visualAsset: undefined,
+      visualAsset: useVector && proxyUrl && references[0] ? { ...references[0], url: proxyUrl } : undefined,
     };
   });
   return { ...lesson, visualMode: vectorScenes ? 'vector2d' : 'diagram', scenes };

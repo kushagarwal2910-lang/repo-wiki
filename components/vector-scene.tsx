@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { VectorLayer, VisualScene } from '@/lib/visual-schema';
 
 type Point = { x: number; y: number };
@@ -45,8 +45,107 @@ function motionClass(motion: VectorLayer['motion']) {
   return motion === 'none' ? '' : `vector-motion-${motion}`;
 }
 
+type TracePoint = { x: number; y: number; color: string; edge: boolean };
+
+function HiddenReferenceTrace({ scene, onReady }: { scene: VisualScene; onReady: (ready: boolean) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sourceUrl = scene.visualAsset?.url;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !sourceUrl) return;
+    let stopped = false;
+    let animationFrame = 0;
+    const image = new Image();
+
+    image.onload = () => {
+      if (stopped) return;
+      const sampleWidth = 260;
+      const sampleHeight = Math.max(120, Math.round(sampleWidth * image.naturalHeight / Math.max(1, image.naturalWidth)));
+      const offscreen = document.createElement('canvas');
+      offscreen.width = sampleWidth;
+      offscreen.height = sampleHeight;
+      const sampleContext = offscreen.getContext('2d', { willReadFrequently: true });
+      if (!sampleContext) return;
+      sampleContext.drawImage(image, 0, 0, sampleWidth, sampleHeight);
+      const pixels = sampleContext.getImageData(0, 0, sampleWidth, sampleHeight).data;
+      const luminance = new Float32Array(sampleWidth * sampleHeight);
+      for (let index = 0; index < luminance.length; index += 1) {
+        const offset = index * 4;
+        luminance[index] = pixels[offset] * .299 + pixels[offset + 1] * .587 + pixels[offset + 2] * .114;
+      }
+      const cornerOffsets = [0, sampleWidth - 1, (sampleHeight - 1) * sampleWidth, sampleHeight * sampleWidth - 1];
+      const background = cornerOffsets.reduce((sum, index) => sum + luminance[index], 0) / cornerOffsets.length;
+      const points: TracePoint[] = [];
+      for (let y = 1; y < sampleHeight - 1; y += 1) {
+        for (let x = 1; x < sampleWidth - 1; x += 1) {
+          const index = y * sampleWidth + x;
+          const gx = -luminance[index - sampleWidth - 1] - 2 * luminance[index - 1] - luminance[index + sampleWidth - 1] + luminance[index - sampleWidth + 1] + 2 * luminance[index + 1] + luminance[index + sampleWidth + 1];
+          const gy = -luminance[index - sampleWidth - 1] - 2 * luminance[index - sampleWidth] - luminance[index - sampleWidth + 1] + luminance[index + sampleWidth - 1] + 2 * luminance[index + sampleWidth] + luminance[index + sampleWidth + 1];
+          const edge = Math.hypot(gx, gy) > 105;
+          const interior = x % 4 === 0 && y % 4 === 0 && Math.abs(luminance[index] - background) > 38;
+          if (!edge && !interior) continue;
+          const offset = index * 4;
+          const red = Math.min(255, Math.round(pixels[offset] * 1.08 + 8));
+          const green = Math.min(255, Math.round(pixels[offset + 1] * 1.08 + 8));
+          const blue = Math.min(255, Math.round(pixels[offset + 2] * 1.08 + 8));
+          points.push({ x, y, color: `rgb(${red} ${green} ${blue})`, edge });
+        }
+      }
+      if (points.length < 80) return;
+      const selected = points.length > 9000 ? points.filter((_, index) => index % Math.ceil(points.length / 9000) === 0) : points;
+      onReady(true);
+      const startedAt = performance.now();
+
+      const draw = (now: number) => {
+        if (stopped) return;
+        const bounds = canvas.getBoundingClientRect();
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const width = Math.max(1, Math.round(bounds.width * dpr));
+        const height = Math.max(1, Math.round(bounds.height * dpr));
+        if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+        const context = canvas.getContext('2d');
+        if (!context) return;
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        context.clearRect(0, 0, bounds.width, bounds.height);
+        const zoom = Math.max(.85, Math.min(2.2, scene.camera.zoom));
+        const scale = Math.min(bounds.width / sampleWidth, bounds.height / sampleHeight) * .82 * zoom;
+        const focusX = scene.camera.x / 100 * sampleWidth;
+        const focusY = scene.camera.y / 100 * sampleHeight;
+        const elapsed = now - startedAt;
+        const reveal = Math.min(1, elapsed / 1500);
+        const visibleCount = Math.floor(selected.length * reveal);
+        context.save();
+        context.translate(bounds.width / 2 - focusX * scale, bounds.height / 2 - focusY * scale);
+        context.scale(scale, scale);
+        context.globalCompositeOperation = 'screen';
+        for (let index = 0; index < visibleCount; index += 1) {
+          const point = selected[index];
+          const wave = Math.sin(elapsed * .0022 + point.x * .08 + point.y * .055);
+          const drift = point.edge ? wave * .22 : wave * .08;
+          context.globalAlpha = point.edge ? .62 + wave * .18 : .2 + wave * .07;
+          context.fillStyle = point.edge ? '#dfffee' : point.color;
+          context.beginPath();
+          context.arc(point.x + drift, point.y - drift, point.edge ? .7 : .52, 0, Math.PI * 2);
+          context.fill();
+        }
+        context.restore();
+        animationFrame = requestAnimationFrame(draw);
+      };
+      animationFrame = requestAnimationFrame(draw);
+    };
+    image.onerror = () => onReady(false);
+    image.src = sourceUrl;
+    return () => { stopped = true; cancelAnimationFrame(animationFrame); };
+  }, [onReady, scene.camera.x, scene.camera.y, scene.camera.zoom, sourceUrl]);
+
+  if (!sourceUrl) return null;
+  return <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />;
+}
+
 export function VectorSceneView({ scene }: { scene: VisualScene }) {
   const [focused, setFocused] = useState(false);
+  const [traceReady, setTraceReady] = useState(false);
   const safeId = useMemo(() => scene.id.replace(/[^a-zA-Z0-9_-]/g, '-'), [scene.id]);
   const layers = scene.vectorLayers;
 
@@ -62,7 +161,8 @@ export function VectorSceneView({ scene }: { scene: VisualScene }) {
 
   return (
     <div className="relative h-full min-h-[420px] w-full overflow-hidden bg-[radial-gradient(circle_at_50%_46%,#14362a_0%,#07140f_54%,#040c09_100%)]">
-      <svg className="h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${scene.title}, generated executable vector animation`}>
+      <HiddenReferenceTrace scene={scene} onReady={setTraceReady} />
+      <svg className="relative h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label={`${scene.title}, generated executable contour animation`}>
         <defs>
           <pattern id={`vector-grid-${safeId}`} width="5" height="5" patternUnits="userSpaceOnUse"><path d="M 5 0 L 0 0 0 5" fill="none" stroke="#d7ff63" strokeOpacity=".035" strokeWidth=".16" /></pattern>
           <filter id={`vector-glow-${safeId}`} x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="1.1" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
@@ -88,7 +188,7 @@ export function VectorSceneView({ scene }: { scene: VisualScene }) {
         <circle cx="50" cy="50" r="39" fill="none" stroke="#d7ff63" strokeOpacity=".045" strokeWidth=".35"><animate attributeName="r" values="36;41;36" dur="8s" repeatCount="indefinite" /></circle>
         <g className="vector-camera" style={{ transform: cameraTransform }}>
           <g filter={`url(#vector-shadow-${safeId})`}>
-            {layers.map((layer, index) => (
+            {!traceReady && layers.map((layer, index) => (
               <path
                 key={layer.id}
                 d={smoothPath(layer.points, layer.closed)}
@@ -139,13 +239,13 @@ export function VectorSceneView({ scene }: { scene: VisualScene }) {
             );
           })}
 
-          {layers.slice(0, 5).map((layer, index) => {
+          {!traceReady && layers.slice(0, 5).map((layer, index) => {
             const center = centerOf(layer);
             return <circle key={`${layer.id}-signal`} cx={center.x} cy={center.y} r={Math.max(.2, .3 * layer.emphasis)} fill={layer.stroke} opacity=".8"><animate attributeName="opacity" values=".2;.95;.2" dur={`${1.8 + index * .22}s`} repeatCount="indefinite" /></circle>;
           })}
         </g>
       </svg>
-      <div className="pointer-events-none absolute right-5 top-5 flex items-center gap-2 rounded-full border border-[#d7ff63]/20 bg-[#07130f]/88 px-3 py-1.5 text-[9px] uppercase tracking-[.14em] text-[#d7ff63]"><span className="size-1.5 animate-pulse rounded-full bg-[#d7ff63]" />Executable vector scene</div>
+      <div className="pointer-events-none absolute right-5 top-5 flex items-center gap-2 rounded-full border border-[#d7ff63]/20 bg-[#07130f]/88 px-3 py-1.5 text-[9px] uppercase tracking-[.14em] text-[#d7ff63]"><span className="size-1.5 animate-pulse rounded-full bg-[#d7ff63]" />Executable {traceReady ? 'vision trace' : 'vector'} scene</div>
     </div>
   );
 }
