@@ -100,7 +100,7 @@ export type VisualScene = {
   nodes: VisualNode[];
   edges: VisualEdge[];
   focusNodeIds: string[];
-  renderMode: 'vector2d' | 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
+  renderMode: 'mesh3d' | 'vector2d' | 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
   camera3d: {
     position: [number, number, number];
     target: [number, number, number];
@@ -114,12 +114,20 @@ export type VisualScene = {
   vectorLayers: VectorLayer[];
 };
 
+export type GeneratedMesh = {
+  obj: string;
+  vertexCount: number;
+  faceCount: number;
+  generator: 'llama-mesh-public';
+};
+
 export type VisualLesson = {
   title: string;
   subtitle: string;
   strategy: 'flow' | 'timeline' | 'network' | 'cycle' | 'comparison' | 'layers';
   sourceSummary: string;
-  visualMode: 'vector2d' | 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
+  visualMode: 'mesh3d' | 'vector2d' | 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
+  generatedMesh?: GeneratedMesh;
   scenes: VisualScene[];
 };
 

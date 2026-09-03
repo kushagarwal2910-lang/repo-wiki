@@ -2,6 +2,6 @@ export async function GET() {
   return Response.json({
     status: 'ok',
     product: 'anima',
-    contracts: ['tavily-web-research', 'signed-hidden-visual-reference', 'groq-vision-codegen', 'd1-persistent-rag', 'computer-vision-trace-runtime', 'safe-vector-animation-runtime', 'diagram-fallback-runtime'],
+    contracts: ['tavily-web-research', 'groq-grounded-lesson-director', 'd1-persistent-rag', 'public-llama-mesh-generation', 'strict-obj-validation', 'interactive-threejs-runtime', 'diagram-fallback-runtime'],
   });
 }

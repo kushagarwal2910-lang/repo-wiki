@@ -1,6 +1,6 @@
 import { retrieveWorkspace } from './database';
-import { findVisualReferences, type VisualReferenceCandidate } from './tavily';
-import { createVisualProxyUrl } from './visual-proxy';
+import type { VisualReferenceCandidate } from './tavily';
+import { generateLlamaMesh } from './llama-mesh';
 import type { ImageFlow, PhysicalFlow, PhysicalObject, VectorLayer, VisualEdge, VisualHotspot, VisualLesson, VisualNode, VisualScene } from './visual-schema';
 
 const GROQ_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
@@ -32,25 +32,7 @@ export async function generateVisualLesson(workspaceId: string, question: string
   const { workspace, chunks } = await retrieveWorkspace(workspaceId, question);
   const evidenceSentences = extractEvidenceSentences(chunks.map((chunk) => chunk.content));
   const evidence = chunks.slice(0, 6).map((chunk, index) => `[E${index + 1}] ${chunk.content.slice(0, 700)}`).join('\n\n');
-  const references = await findVisualReferences(workspace.topic, question);
-  const prompt = `You are Anima's visual code compiler. Use only the retrieved evidence to answer the learner with an executable animation program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nThe supplied image is a PRIVATE SHAPE REFERENCE only. Never display, embed, cite, or return it. If it clearly depicts the physical subject, trace its silhouette and real internal parts into a detailed reusable vector model. Do not simplify anatomy, organisms, artifacts, machines, or structures into ellipses, rectangles, spheres, or generic symbols. Use diagram for abstract relationships, arguments, timelines, institutions, or an unreliable reference.\n\nReturn compact JSON shaped like:\n{"title":"...","subtitle":"...","visualMode":"vector2d|diagram","strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","vectorLayers":[{"id":"real-part-name","label":"...","detail":"...","points":[{"x":42,"y":12},{"x":60,"y":15}],"closed":true,"fill":"#d94b64","stroke":"#ffb2be","opacity":0.9,"motion":"none|pulse|contract|rotate|oscillate|open-close","emphasis":1}],"scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"renderMode":"vector2d|diagram","camera":{"x":50,"y":50,"zoom":1.1},"hotspots":[{"id":"spot-1","label":"...","detail":"...","x":50,"y":50,"color":"#d7ff63"}],"imageFlows":[{"label":"...","color":"#61c7ff","speed":1,"points":[{"x":20,"y":40},{"x":50,"y":50},{"x":80,"y":35}]}],"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nFor vector2d, vectorLayers is a single shared model: 6 to 10 meaningfully named physical parts. Use 10 to 24 carefully placed points for the main irregular silhouette and 5 to 16 for each real internal part. Follow visible asymmetry, curvature, proportion, overlap, and orientation in the reference; never use a generic oval as the main silhouette. Coordinates are 0..100. Produce exactly 3 progressive scenes that reuse this model. Animate real behavior with layer motion and scene-specific particle paths. Change camera coordinates for overview, close-up, and mechanism. Keep narration under 55 words and synchronized with visible motion. Preserve uncertainty and never invent measurements. Output JSON only.`;
-
-  if (references.length) {
-    try {
-      const candidateText = references.slice(0, 1).map((reference, index) => `Candidate ${index}: ${reference.description}`).join('\n');
-      const content: Array<Record<string, unknown>> = [{ type: 'text', text: `${prompt}\n\nHIDDEN VISUAL CANDIDATE:\n${candidateText}\nUse it only to infer contours. If it does not clearly match the physical subject, choose diagram.` }];
-      references.slice(0, 1).forEach((reference) => content.push({ type: 'image_url', image_url: { url: reference.url } }));
-      const data = await groqRequest({
-        model: 'qwen/qwen3.6-27b',
-        messages: [{ role: 'system', content: 'Return grounded JSON only. Inspect visual coordinates precisely.' }, { role: 'user', content }],
-        temperature: 0.15,
-        max_completion_tokens: 2300,
-      });
-      const modelContent = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
-      const parsed = parseModelJson(modelContent);
-      if (Array.isArray(record(parsed).scenes)) return finalizeExecutableLesson(normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references), references);
-    } catch (error) { console.warn('Vision compiler unavailable; using deterministic reference planning.', error instanceof Error ? error.message : 'unknown error'); }
-  }
+  const prompt = `You are Anima's grounded lesson director. Use only the retrieved evidence.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nChoose visualMode mesh3d only when the central subject is a concrete physical object, organism, anatomical structure, machine, material, or spatial structure whose shape genuinely helps explain it. Choose diagram for politics, history, arguments, timelines, systems, comparisons, processes without a single meaningful physical form, and vague concepts. Never force an abstract subject into a 3D object.\n\nReturn JSON: {"title":"...","subtitle":"...","visualMode":"mesh3d|diagram","meshDescription":"one concise physically accurate description of the object to generate","strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","scenes":[{"id":"scene-1","title":"...","narration":"under 55 words","durationSeconds":10,"renderMode":"mesh3d|diagram","camera":{"x":50,"y":50,"zoom":1.1},"camera3d":{"position":[6,4,8],"target":[0,0,0],"autoRotate":true},"nodes":[{"id":"n1","label":"...","detail":"...","x":20,"y":50,"shape":"rounded","color":"lime"}],"edges":[{"from":"n1","to":"n2","label":"...","animated":true}],"focusNodeIds":["n1"]}]} Produce exactly 3 progressive scenes. Narration must match the visible explanation and preserve uncertainty. Output JSON only.`;
 
   try {
     const data = await groqRequest({
@@ -64,17 +46,19 @@ export async function generateVisualLesson(workspaceId: string, question: string
       response_format: { type: 'json_object' },
     });
     const content = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
-    return finalizeExecutableLesson(normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, references), references);
+    const parsed = parseModelJson(content);
+    const lesson = normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, []);
+    return finalizeExecutableLesson(lesson, stringValue(record(parsed).meshDescription, `${workspace.topic}: ${question}`));
   } catch (error) {
     console.warn('Text compiler unavailable; using grounded fallback.', error instanceof Error ? error.message : 'unknown error');
-    return finalizeExecutableLesson(buildGroundedFallback(workspace.topic, question, evidenceSentences), []);
+    return buildGroundedFallback(workspace.topic, question, evidenceSentences);
   }
 }
 
 type JsonRecord = Record<string, unknown>;
 
 const strategies = ['flow', 'timeline', 'network', 'cycle', 'comparison', 'layers'] as const;
-const visualModes = ['vector2d', 'reference2d', 'physical3d', 'spatial2d', 'diagram'] as const;
+const visualModes = ['mesh3d', 'vector2d', 'reference2d', 'physical3d', 'spatial2d', 'diagram'] as const;
 const shapes = ['circle', 'rounded', 'pill'] as const;
 const colors = ['lime', 'mint', 'blue', 'amber', 'coral', 'violet'] as const;
 const primitives = ['sphere', 'box', 'cylinder', 'cone', 'torus', 'capsule', 'tube'] as const;
@@ -439,17 +423,13 @@ function hasDetailedVectorModel(layers: VectorLayer[]) {
   return layers.length >= 5 && closed.length >= 3 && detailedContours >= 2 && mainContourPoints >= 10 && totalPoints >= 42 && uniquePoints >= 34;
 }
 
-async function finalizeExecutableLesson(lesson: VisualLesson, references: VisualReferenceCandidate[]): Promise<VisualLesson> {
-  const proxyUrl = references[0] ? await createVisualProxyUrl(references[0].url) : undefined;
-  let vectorScenes = 0;
-  const scenes = lesson.scenes.map((scene) => {
-    const useVector = Boolean(proxyUrl) && scene.renderMode !== 'diagram' && (hasDetailedVectorModel(scene.vectorLayers) || scene.vectorLayers.length >= 3);
-    if (useVector) vectorScenes += 1;
-    return {
-      ...scene,
-      renderMode: useVector ? 'vector2d' as const : 'diagram' as const,
-      visualAsset: useVector && proxyUrl && references[0] ? { ...references[0], url: proxyUrl } : undefined,
-    };
-  });
-  return { ...lesson, visualMode: vectorScenes ? 'vector2d' : 'diagram', scenes };
+async function finalizeExecutableLesson(lesson: VisualLesson, meshDescription: string): Promise<VisualLesson> {
+  if (lesson.visualMode !== 'mesh3d') {
+    return { ...lesson, visualMode: 'diagram', scenes: lesson.scenes.map((scene) => ({ ...scene, renderMode: 'diagram' })) };
+  }
+  const generatedMesh = await generateLlamaMesh(meshDescription);
+  if (!generatedMesh) {
+    return { ...lesson, visualMode: 'diagram', sourceSummary: `${lesson.sourceSummary} The 3D generator was unavailable, so this run uses the animated diagram fallback.`, scenes: lesson.scenes.map((scene) => ({ ...scene, renderMode: 'diagram' })) };
+  }
+  return { ...lesson, visualMode: 'mesh3d', generatedMesh, scenes: lesson.scenes.map((scene) => ({ ...scene, renderMode: 'mesh3d' })) };
 }
