@@ -291,6 +291,25 @@ function normalizeVectorLayers(value: unknown): VectorLayer[] {
   });
 }
 
+function usefulHotspotLabel(label: string) {
+  const words = label.split(/\s+/).filter(Boolean);
+  return words.length <= 5 && !/^(the|this|that|these|those|during|when|first|second|third|it|there|here)\b/i.test(label);
+}
+
+function hotspotsFromVectorLayers(layers: VectorLayer[]): VisualHotspot[] {
+  return layers.slice(0, 5).map((layer, index) => {
+    const center = layer.points.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), { x: 0, y: 0 });
+    return {
+      id: `traced-${layer.id}`,
+      label: layer.label,
+      detail: layer.detail,
+      x: center.x / layer.points.length,
+      y: center.y / layer.points.length,
+      color: ['#d7ff63', '#61c7ff', '#ff8b7c', '#b9a0ff', '#ffc861'][index % 5],
+    };
+  });
+}
+
 function normalizeScene(value: unknown, sceneIndex: number, sentences: string[], references: VisualReferenceCandidate[] = [], defaultAssetIndex = -1): VisualScene {
   const raw = record(value);
   const sceneId = stringValue(raw.id, `scene-${sceneIndex + 1}`);
@@ -339,9 +358,10 @@ function normalizeScene(value: unknown, sceneIndex: number, sentences: string[],
   const renderMode = requestedRenderMode === 'reference2d' && !visualAsset ? 'physical3d' : requestedRenderMode;
   const objects = normalizePhysicalObjects(raw.objects, sceneIndex, sentences, completeNodes);
   const flows = normalizeFlows(raw.flows, objects);
-  const hotspots = normalizeHotspots(raw.hotspots, completeNodes);
-  const imageFlows = normalizeImageFlows(raw.imageFlows, hotspots);
   const vectorLayers = normalizeVectorLayers(raw.vectorLayers);
+  const requestedHotspots = normalizeHotspots(raw.hotspots, completeNodes).filter((hotspot) => usefulHotspotLabel(hotspot.label));
+  const hotspots = requestedHotspots.length >= 2 ? requestedHotspots : hotspotsFromVectorLayers(vectorLayers);
+  const imageFlows = normalizeImageFlows(raw.imageFlows, hotspots);
   const requestedFocus = Array.isArray(raw.focusNodeIds) ? raw.focusNodeIds.filter((id): id is string => typeof id === 'string' && validIds.has(id)) : [];
   return {
     id: sceneId,
@@ -391,11 +411,15 @@ function normalizeVisualLesson(value: unknown, topic: string, question: string, 
   const requestedVisualMode = oneOf(raw.visualMode, visualModes, 'diagram');
   const defaultAssetIndex = Math.round(numberValue(raw.visualAssetIndex, references.length ? 0 : -1, -1, Math.max(-1, references.length - 1)));
   const visualMode = requestedVisualMode === 'reference2d' && defaultAssetIndex < 0 ? 'physical3d' : requestedVisualMode;
-  const scenes = rawScenes.map((scene, index) => normalizeScene(scene, index, sentences, references, defaultAssetIndex)).map((scene) => ({
-    ...scene,
-    vectorLayers: scene.vectorLayers.length >= 3 ? scene.vectorLayers : sharedVectorLayers,
-    renderMode: scene.renderMode === 'diagram' && visualMode !== 'diagram' ? visualMode : scene.renderMode,
-  }));
+  const scenes = rawScenes.map((scene, index) => normalizeScene(scene, index, sentences, references, defaultAssetIndex)).map((scene) => {
+    const vectorLayers = scene.vectorLayers.length >= 3 ? scene.vectorLayers : sharedVectorLayers;
+    return {
+      ...scene,
+      vectorLayers,
+      hotspots: scene.hotspots.length >= 2 ? scene.hotspots : hotspotsFromVectorLayers(vectorLayers),
+      renderMode: scene.renderMode === 'diagram' && visualMode !== 'diagram' ? visualMode : scene.renderMode,
+    };
+  });
   return {
     title: stringValue(raw.title, shortLabel(question, topic)).slice(0, 120),
     subtitle: stringValue(raw.subtitle, `A visual explanation of ${topic}`).slice(0, 180),
