@@ -78,6 +78,19 @@ export type ImageFlow = {
   points: Array<{ x: number; y: number }>;
 };
 
+export type VectorLayer = {
+  id: string;
+  label: string;
+  detail: string;
+  points: Array<{ x: number; y: number }>;
+  closed: boolean;
+  fill: string;
+  stroke: string;
+  opacity: number;
+  motion: 'none' | 'pulse' | 'contract' | 'rotate' | 'oscillate' | 'open-close';
+  emphasis: number;
+};
+
 export type VisualScene = {
   id: string;
   title: string;
@@ -87,7 +100,7 @@ export type VisualScene = {
   nodes: VisualNode[];
   edges: VisualEdge[];
   focusNodeIds: string[];
-  renderMode: 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
+  renderMode: 'vector2d' | 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
   camera3d: {
     position: [number, number, number];
     target: [number, number, number];
@@ -98,6 +111,7 @@ export type VisualScene = {
   visualAsset?: VisualAsset;
   hotspots: VisualHotspot[];
   imageFlows: ImageFlow[];
+  vectorLayers: VectorLayer[];
 };
 
 export type VisualLesson = {
@@ -105,7 +119,7 @@ export type VisualLesson = {
   subtitle: string;
   strategy: 'flow' | 'timeline' | 'network' | 'cycle' | 'comparison' | 'layers';
   sourceSummary: string;
-  visualMode: 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
+  visualMode: 'vector2d' | 'reference2d' | 'physical3d' | 'spatial2d' | 'diagram';
   scenes: VisualScene[];
 };
 

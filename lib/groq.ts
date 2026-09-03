@@ -1,7 +1,6 @@
 import { retrieveWorkspace } from './database';
 import { findVisualReferences, type VisualReferenceCandidate } from './tavily';
-import { createVisualProxyUrl } from './visual-proxy';
-import type { ImageFlow, PhysicalFlow, PhysicalObject, VisualEdge, VisualHotspot, VisualLesson, VisualNode, VisualScene } from './visual-schema';
+import type { ImageFlow, PhysicalFlow, PhysicalObject, VectorLayer, VisualEdge, VisualHotspot, VisualLesson, VisualNode, VisualScene } from './visual-schema';
 
 const GROQ_CHAT = 'https://api.groq.com/openai/v1/chat/completions';
 
@@ -33,22 +32,22 @@ export async function generateVisualLesson(workspaceId: string, question: string
   const evidenceSentences = extractEvidenceSentences(chunks.map((chunk) => chunk.content));
   const evidence = chunks.slice(0, 6).map((chunk, index) => `[E${index + 1}] ${chunk.content.slice(0, 700)}`).join('\n\n');
   const references = await findVisualReferences(workspace.topic, question);
-  const prompt = `You are Anima's visual scene compiler. Use only the retrieved evidence to answer the learner by producing an executable visual program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nChoose the most truthful representation. Use reference2d when one supplied image accurately depicts the real subject, anatomy, artifact, place, machine, or structure. This is preferred over approximating a recognizable subject with geometric primitives. Use physical3d only for mechanisms that can be represented accurately with generated geometry. Use spatial2d for microscopic spatial processes. Use diagram only for abstract relationships, arguments, timelines, or institutions.\n\nReturn one JSON object with this shape:\n{"title":"...","subtitle":"...","visualMode":"reference2d|physical3d|spatial2d|diagram","visualAssetIndex":0,"strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"renderMode":"reference2d|physical3d|spatial2d|diagram","visualAssetIndex":0,"camera":{"x":50,"y":50,"zoom":1.2},"hotspots":[{"id":"spot-1","label":"...","detail":"...","x":50,"y":50,"color":"#d7ff63"}],"imageFlows":[{"label":"...","color":"#61c7ff","speed":1,"points":[{"x":20,"y":40},{"x":50,"y":50},{"x":80,"y":35}]}],"camera3d":{"position":[6,4,8],"target":[0,0,0],"autoRotate":true},"objects":[{"id":"part-1","label":"...","detail":"...","primitive":"sphere|box|cylinder|cone|torus|capsule|tube","position":[0,0,0],"scale":[1,1,1],"rotation":[0,0,0],"color":"#ef476f","opacity":1,"roughness":0.55,"metalness":0.05,"motion":"none|rotate|pulse|oscillate","cutaway":false}],"flows":[{"from":"part-1","to":"part-2","label":"...","color":"#61c7ff","speed":1,"particleCount":8}],"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nWhen using reference2d, inspect the chosen image carefully. Set hotspots and every imageFlow point to the actual visible feature using normalized image coordinates from 0 to 100. Use camera changes for overview, close-up, and mechanism. Never label a location you cannot identify in the image. Prefer 3 concise progressive scenes. Every endpoint must be valid. Keep narration under 65 words and synchronized with the visible scene. Preserve uncertainty and never invent measurements. Output JSON only.`;
+  const prompt = `You are Anima's visual code compiler. Use only the retrieved evidence to answer the learner by producing an executable animation program.\n\nTOPIC: ${workspace.topic}\nQUESTION: ${question}\n\nRETRIEVED EVIDENCE:\n${evidence}\n\nThe supplied image is a PRIVATE SHAPE REFERENCE only. Never display, embed, cite, or return that image. Inspect it to trace the real subject into custom vector contours. Choose vector2d for anatomy, organisms, artifacts, places, machines, structures, and spatial mechanisms when you can trace at least three recognizable layers. Use diagram only for abstract relationships, arguments, timelines, institutions, or when physical contours cannot be traced reliably. Do not approximate recognizable subjects with circles, boxes, spheres, or generic cards.\n\nReturn one JSON object with this shape:\n{"title":"...","subtitle":"...","visualMode":"vector2d|diagram","strategy":"flow|timeline|network|cycle|comparison|layers","sourceSummary":"...","scenes":[{"id":"scene-1","title":"...","narration":"...","durationSeconds":10,"renderMode":"vector2d|diagram","camera":{"x":50,"y":50,"zoom":1.2},"vectorLayers":[{"id":"outer-shape","label":"...","detail":"...","points":[{"x":42,"y":12},{"x":60,"y":15},{"x":76,"y":34},{"x":68,"y":78},{"x":45,"y":91},{"x":25,"y":55}],"closed":true,"fill":"#d94b64","stroke":"#ffb2be","opacity":0.9,"motion":"none|pulse|contract|rotate|oscillate|open-close","emphasis":1}],"hotspots":[{"id":"spot-1","label":"...","detail":"...","x":50,"y":50,"color":"#d7ff63"}],"imageFlows":[{"label":"...","color":"#61c7ff","speed":1,"points":[{"x":20,"y":40},{"x":50,"y":50},{"x":80,"y":35}]}],"nodes":[{"id":"node-1","label":"...","detail":"...","x":20,"y":50,"shape":"circle|rounded|pill","color":"lime|mint|blue|amber|coral|violet"}],"edges":[{"from":"node-1","to":"node-2","label":"...","animated":true}],"focusNodeIds":["node-1"]}]}\n\nFor vector2d, trace the subject silhouette and important internal components as 3 to 6 layered contours with 5 to 12 points each. Coordinates are normalized from 0 to 100 relative to the hidden reference image. Preserve the subject's proportions and spatial arrangement. Use exactly 3 progressive scenes and animate real behavior: contraction, valve opening, rotation, oscillation, moving material, energy, blood, fluid, ions, or signal flow. imageFlows are executable particle paths, not image annotations. Change camera coordinates for overview, close-up, and mechanism. Keep narration under 55 words and synchronized with visible motion. Preserve uncertainty and never invent measurements. Output compact JSON only.`;
 
   if (references.length) {
     try {
       const candidateText = references.slice(0, 1).map((reference, index) => `Candidate ${index}: ${reference.description}`).join('\n');
-      const content: Array<Record<string, unknown>> = [{ type: 'text', text: `${prompt}\n\nVISUAL CANDIDATES:\n${candidateText}\nSelect only a candidate that clearly matches the subject. If none does, do not use reference2d.` }];
+      const content: Array<Record<string, unknown>> = [{ type: 'text', text: `${prompt}\n\nHIDDEN VISUAL CANDIDATE:\n${candidateText}\nUse it only to infer contours. If it does not clearly match the physical subject, choose diagram.` }];
       references.slice(0, 1).forEach((reference) => content.push({ type: 'image_url', image_url: { url: reference.url } }));
       const data = await groqRequest({
         model: 'qwen/qwen3.6-27b',
         messages: [{ role: 'system', content: 'Return grounded JSON only. Inspect visual coordinates precisely.' }, { role: 'user', content }],
         temperature: 0.15,
-        max_completion_tokens: 2000,
+        max_completion_tokens: 2300,
       });
       const modelContent = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
       const parsed = parseModelJson(modelContent);
-      if (Array.isArray(record(parsed).scenes)) return finalizeReferenceLesson(normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references), references);
+      if (Array.isArray(record(parsed).scenes)) return finalizeExecutableLesson(normalizeVisualLesson(parsed, workspace.topic, question, evidenceSentences, references));
     } catch (error) { console.warn('Vision compiler unavailable; using deterministic reference planning.', error instanceof Error ? error.message : 'unknown error'); }
   }
 
@@ -64,21 +63,22 @@ export async function generateVisualLesson(workspaceId: string, question: string
       response_format: { type: 'json_object' },
     });
     const content = (data.choices as Array<{ message?: { content?: string } }> | undefined)?.[0]?.message?.content || '';
-    return finalizeReferenceLesson(normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, references), references);
+    return finalizeExecutableLesson(normalizeVisualLesson(parseModelJson(content), workspace.topic, question, evidenceSentences, references));
   } catch (error) {
     console.warn('Text compiler unavailable; using grounded fallback.', error instanceof Error ? error.message : 'unknown error');
-    return finalizeReferenceLesson(buildGroundedFallback(workspace.topic, question, evidenceSentences), references);
+    return finalizeExecutableLesson(buildGroundedFallback(workspace.topic, question, evidenceSentences));
   }
 }
 
 type JsonRecord = Record<string, unknown>;
 
 const strategies = ['flow', 'timeline', 'network', 'cycle', 'comparison', 'layers'] as const;
-const visualModes = ['reference2d', 'physical3d', 'spatial2d', 'diagram'] as const;
+const visualModes = ['vector2d', 'reference2d', 'physical3d', 'spatial2d', 'diagram'] as const;
 const shapes = ['circle', 'rounded', 'pill'] as const;
 const colors = ['lime', 'mint', 'blue', 'amber', 'coral', 'violet'] as const;
 const primitives = ['sphere', 'box', 'cylinder', 'cone', 'torus', 'capsule', 'tube'] as const;
 const motions = ['none', 'rotate', 'pulse', 'oscillate'] as const;
+const vectorMotions = ['none', 'pulse', 'contract', 'rotate', 'oscillate', 'open-close'] as const;
 
 function record(value: unknown): JsonRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {};
@@ -263,6 +263,33 @@ function normalizeImageFlows(value: unknown, hotspots: VisualHotspot[]): ImageFl
   return [{ label: 'movement', color: '#61c7ff', speed: 1, points: hotspots.map(({ x, y }) => ({ x, y })) }];
 }
 
+function normalizeVectorLayers(value: unknown): VectorLayer[] {
+  const rawLayers = Array.isArray(value) ? value.slice(0, 12) : [];
+  const usedIds = new Set<string>();
+  return rawLayers.flatMap((entry, layerIndex): VectorLayer[] => {
+    const raw = record(entry);
+    const rawPoints = Array.isArray(raw.points) ? raw.points.slice(0, 24) : [];
+    const points = rawPoints.map((point) => record(point)).map((point) => ({ x: numberValue(point.x, 50, 1, 99), y: numberValue(point.y, 50, 1, 99) }));
+    const closed = raw.closed !== false;
+    if (points.length < (closed ? 3 : 2)) return [];
+    let id = stringValue(raw.id, `layer-${layerIndex + 1}`).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64);
+    if (usedIds.has(id)) id = `${id}-${layerIndex + 1}`;
+    usedIds.add(id);
+    return [{
+      id,
+      label: stringValue(raw.label, `Layer ${layerIndex + 1}`).slice(0, 80),
+      detail: stringValue(raw.detail, 'Generated visible component.').slice(0, 300),
+      points,
+      closed,
+      fill: colorValue(raw.fill, ['#d94b64', '#4d8fd8', '#d7ff63', '#bd82ef', '#f29b54'][layerIndex % 5]),
+      stroke: colorValue(raw.stroke, '#ecfff4'),
+      opacity: numberValue(raw.opacity, 0.86, 0.12, 1),
+      motion: oneOf(raw.motion, vectorMotions, 'none'),
+      emphasis: numberValue(raw.emphasis, 1, 0.35, 2),
+    }];
+  });
+}
+
 function normalizeScene(value: unknown, sceneIndex: number, sentences: string[], references: VisualReferenceCandidate[] = [], defaultAssetIndex = -1): VisualScene {
   const raw = record(value);
   const sceneId = stringValue(raw.id, `scene-${sceneIndex + 1}`);
@@ -313,6 +340,7 @@ function normalizeScene(value: unknown, sceneIndex: number, sentences: string[],
   const flows = normalizeFlows(raw.flows, objects);
   const hotspots = normalizeHotspots(raw.hotspots, completeNodes);
   const imageFlows = normalizeImageFlows(raw.imageFlows, hotspots);
+  const vectorLayers = normalizeVectorLayers(raw.vectorLayers);
   const requestedFocus = Array.isArray(raw.focusNodeIds) ? raw.focusNodeIds.filter((id): id is string => typeof id === 'string' && validIds.has(id)) : [];
   return {
     id: sceneId,
@@ -338,6 +366,7 @@ function normalizeScene(value: unknown, sceneIndex: number, sentences: string[],
     visualAsset,
     hotspots,
     imageFlows,
+    vectorLayers,
   };
 }
 
@@ -374,24 +403,16 @@ function normalizeVisualLesson(value: unknown, topic: string, question: string, 
   };
 }
 
-async function finalizeReferenceLesson(lesson: VisualLesson, references: VisualReferenceCandidate[]): Promise<VisualLesson> {
-  if (!references.length || lesson.visualMode === 'diagram') return lesson;
-  const proxyUrls = await Promise.all(references.map((reference) => createVisualProxyUrl(reference.url)));
-  let referenceScenes = 0;
+function finalizeExecutableLesson(lesson: VisualLesson): VisualLesson {
+  let vectorScenes = 0;
   const scenes = lesson.scenes.map((scene) => {
-    if (scene.renderMode === 'diagram') return scene;
-    referenceScenes += 1;
-    const selectedIndex = Math.max(0, references.findIndex((reference) => reference.url === scene.visualAsset?.url));
-    const selected = references[selectedIndex];
+    const useVector = scene.renderMode !== 'diagram' && scene.vectorLayers.length >= 3;
+    if (useVector) vectorScenes += 1;
     return {
       ...scene,
-      renderMode: 'reference2d' as const,
-      visualAsset: {
-        ...selected,
-        url: proxyUrls[selectedIndex],
-        fallbackUrls: proxyUrls.filter((_, index) => index !== selectedIndex),
-      },
+      renderMode: useVector ? 'vector2d' as const : 'diagram' as const,
+      visualAsset: undefined,
     };
   });
-  return { ...lesson, visualMode: referenceScenes ? 'reference2d' : lesson.visualMode, scenes };
+  return { ...lesson, visualMode: vectorScenes ? 'vector2d' : 'diagram', scenes };
 }

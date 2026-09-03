@@ -9,8 +9,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { PhysicalSceneView } from '@/components/physical-scene';
-import { ReferenceSceneView } from '@/components/reference-scene';
+import { VectorSceneView } from '@/components/vector-scene';
 import type { ResearchWorkspace, VisualLesson, VisualNode, VisualScene } from '@/lib/visual-schema';
 
 type Phase = 'topic' | 'researching' | 'ready' | 'generating' | 'lesson' | 'error';
@@ -240,10 +239,10 @@ export default function Home() {
 
             {lesson && scene && phase === 'lesson' && (
               <div className="flex flex-1 flex-col overflow-hidden">
-                <div className="flex items-start justify-between border-b border-white/10 px-5 py-4 md:px-7"><div><div className="text-[10px] uppercase tracking-[.18em] text-[#d7ff63]/65">Generated {scene.renderMode === 'reference2d' ? 'reference-accurate' : scene.renderMode === 'physical3d' ? 'physical 3D' : scene.renderMode === 'spatial2d' ? 'spatial' : lesson.strategy} animation</div><h1 className="mt-1 text-xl font-semibold tracking-[-.03em] md:text-2xl">{lesson.title}</h1><p className="mt-1 text-xs text-emerald-50/35">{lesson.subtitle}</p></div><Button variant="outline" onClick={() => { setLesson(null); setPlaying(false); setPhase('ready'); }} className="border-white/10 bg-white/[.03] text-emerald-50/60"><Plus /> Ask another</Button></div>
+                <div className="flex items-start justify-between border-b border-white/10 px-5 py-4 md:px-7"><div><div className="text-[10px] uppercase tracking-[.18em] text-[#d7ff63]/65">Generated {scene.renderMode === 'vector2d' ? 'executable vector' : lesson.strategy} animation</div><h1 className="mt-1 text-xl font-semibold tracking-[-.03em] md:text-2xl">{lesson.title}</h1><p className="mt-1 text-xs text-emerald-50/35">{lesson.subtitle}</p></div><Button variant="outline" onClick={() => { setLesson(null); setPlaying(false); setPhase('ready'); }} className="border-white/10 bg-white/[.03] text-emerald-50/60"><Plus /> Ask another</Button></div>
                 <div className="relative min-h-[420px] flex-1 overflow-hidden bg-[#07130f]">
-                  {scene.renderMode === 'reference2d' && scene.visualAsset ? <ReferenceSceneView key={scene.id} scene={scene} /> : scene.renderMode === 'physical3d' ? <PhysicalSceneView key={scene.id} scene={scene} /> : <CameraScene key={scene.id} scene={scene} />}
-                  <div className="pointer-events-none absolute left-5 top-5 rounded-xl border border-white/10 bg-[#081510]/85 px-3 py-2 backdrop-blur"><div className="text-[9px] uppercase tracking-[.16em] text-emerald-50/35">Scene {sceneIndex + 1} of {lesson.scenes.length}</div><div className="mt-1 text-sm font-medium">{scene.title}</div>{scene.renderMode === 'physical3d' && <div className="mt-1 text-[9px] text-emerald-50/35">Drag to rotate · scroll to zoom</div>}{scene.renderMode === 'reference2d' && <div className="mt-1 text-[9px] text-emerald-50/35">Verified shape · animated focus</div>}</div>
+                  {scene.renderMode === 'vector2d' ? <VectorSceneView key={scene.id} scene={scene} /> : <CameraScene key={scene.id} scene={scene} />}
+                  <div className="pointer-events-none absolute left-5 top-5 rounded-xl border border-white/10 bg-[#081510]/85 px-3 py-2 backdrop-blur"><div className="text-[9px] uppercase tracking-[.16em] text-emerald-50/35">Scene {sceneIndex + 1} of {lesson.scenes.length}</div><div className="mt-1 text-sm font-medium">{scene.title}</div>{scene.renderMode === 'vector2d' && <div className="mt-1 text-[9px] text-emerald-50/35">Live contours · motion · camera</div>}</div>
                   <div className="pointer-events-none absolute right-5 bottom-5 flex items-center gap-2 rounded-full border border-[#d7ff63]/15 bg-[#081510]/85 px-3 py-1.5 text-[9px] uppercase tracking-[.16em] text-[#d7ff63]"><span className="relative flex size-2"><span className="absolute inline-flex size-full animate-ping rounded-full bg-[#d7ff63] opacity-50" /><span className="relative inline-flex size-2 rounded-full bg-[#d7ff63]" /></span>Live animation</div>
                 </div>
                 <div className="border-t border-white/10 bg-[#081510] p-4 md:px-6">
