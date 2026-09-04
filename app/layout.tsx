@@ -13,17 +13,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Anima — Visual Intelligence',
-  description: 'Research any topic and turn grounded answers into executable narrated animations.',
+  title: 'Repo-Wiki',
+  description: 'Understand any codebase instantly via interactive diagrams and flowcharts.',
   openGraph: {
-    title: 'Anima — Visual Intelligence',
-    description: 'Research anything. See the answer move.',
-    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Anima — Knowledge, made visible.' }],
+    title: 'Repo-Wiki',
+    description: 'Understand any codebase instantly via interactive diagrams and flowcharts.',
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Repo-Wiki' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Anima — Visual Intelligence',
-    description: 'Research anything. See the answer move.',
+    title: 'Repo-Wiki',
+    description: 'Understand any codebase instantly via interactive diagrams and flowcharts.',
     images: ['/og.png'],
   },
 };

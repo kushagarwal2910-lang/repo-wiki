@@ -1,0 +1,1 @@
+async function e(){return Response.json({status:`ok`,product:`anima`,contracts:[`tavily-web-research`,`groq-grounded-lesson-director`,`d1-persistent-rag`,`public-llama-mesh-generation`,`strict-obj-validation`,`interactive-threejs-runtime`,`diagram-fallback-runtime`]})}export{e as GET};

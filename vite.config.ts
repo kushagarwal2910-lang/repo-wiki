@@ -1,7 +1,7 @@
 import { sites } from '@openai/sites-vite-plugin';
 import tailwindcss from '@tailwindcss/postcss';
 import vinext from 'vinext';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import hostingConfig from './.openai/hosting.json';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
@@ -12,25 +12,25 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === 'seatbelt';
 
-const localBindingConfig = {
+const localBindingConfig: any = {
   main: 'vinext/server/fetch-handler',
   compatibility_flags: ['nodejs_compat'],
   d1_databases: d1
     ? [
-        {
-          binding: d1,
-          database_name: 'site-creator-d1',
-          database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
-        },
-      ]
+      {
+        binding: d1,
+        database_name: 'site-creator-d1',
+        database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID,
+      },
+    ]
     : [],
   r2_buckets: r2
     ? [
-        {
-          binding: r2,
-          bucket_name: 'site-creator-r2',
-        },
-      ]
+      {
+        binding: r2,
+        bucket_name: 'site-creator-r2',
+      },
+    ]
     : [],
 };
 
@@ -44,11 +44,22 @@ export default defineConfig(async () => {
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import('@cloudflare/vite-plugin');
 
+  // Load environment variables so we can inject them as bindings for the cloudflare worker
+  const appEnv = loadEnv('', process.cwd(), '');
+  localBindingConfig.bindings = {
+    GROQ_API_KEY: appEnv.GROQ_API_KEY || '',
+    GITHUB_TOKEN: appEnv.GITHUB_TOKEN || ''
+  };
+
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,
+    define: {
+      'process.env.GROQ_API_KEY': JSON.stringify(appEnv.GROQ_API_KEY || process.env.GROQ_API_KEY),
+      'process.env.GITHUB_TOKEN': JSON.stringify(appEnv.GITHUB_TOKEN || process.env.GITHUB_TOKEN)
+    },
     plugins: [
       vinext(),
       sites(),
