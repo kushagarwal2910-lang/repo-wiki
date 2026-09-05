@@ -100,3 +100,13 @@ input {
     transition-duration: .01ms !important;
   }
 }
+
+/* Hide scrollbar completely but retain native scroll physics */
+*::-webkit-scrollbar { display: none; }
+* { -ms-overflow-style: none; scrollbar-width: none; }
+
+
+/* Shrink ReactFlow Native Control GUI Buttons */
+.react-flow__controls { box-shadow: 0 4px 20px rgba(0,0,0,0.8) !important; border-radius: 8px !important; overflow: hidden !important; border: 1px solid rgba(255,255,255,0.15) !important; }
+.react-flow__controls button { width: 24px !important; height: 24px !important; display: flex !important; align-items: center !important; justify-content: center !important; background: black !important; border-bottom: 1px solid rgba(255,255,255,0.05) !important; fill: white !important; }
+.react-flow__controls button svg { width: 12px !important; height: 12px !important; max-width: 12px !important; max-height: 12px !important; }

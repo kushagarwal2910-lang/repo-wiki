@@ -54,6 +54,7 @@ export async function retrieveWorkspace(workspaceId: string, question: string, i
   if (!workspace) throw new Error('This knowledge workspace no longer exists.');
   const result = await db.prepare('SELECT id, source_id, content FROM chunks WHERE workspace_id = ? LIMIT 800').bind(workspaceId).all<StoredChunk>();
   let fileTree: string[] = [];
+  let architectureMap = '';
   const validChunks: StoredChunk[] = [];
   for (const chunk of result.results) {
     if (chunk.content.startsWith('__FILE_TREE__')) {
@@ -63,6 +64,8 @@ export async function retrieveWorkspace(workspaceId: string, question: string, i
       } catch {
         console.warn('Could not parse the stored repository file tree.');
       }
+    } else if (chunk.content.startsWith('__ARCHITECTURE_MAP__')) {
+      architectureMap = chunk.content.slice('__ARCHITECTURE_MAP__\n'.length);
     } else validChunks.push(chunk);
   }
 
@@ -95,5 +98,5 @@ export async function retrieveWorkspace(workspaceId: string, question: string, i
     perPath.set(key, (perPath.get(key) || 0) + 1);
     if (selected.length >= limit) break;
   }
-  return { workspace, chunks: selected, fileTree };
+  return { workspace, chunks: selected, fileTree, architectureMap };
 }
