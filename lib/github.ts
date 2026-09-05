@@ -7,9 +7,9 @@ const SOURCE_EXTENSIONS = new Set([
   'php', 'prisma', 'py', 'rb', 'rs', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx',
   'vue', 'yaml', 'yml',
 ]);
-const MAX_INDEXED_FILES = 42;
+const MAX_INDEXED_FILES = 160;
 const MAX_FILE_CHARS = 60_000;
-const MAX_TOTAL_SOURCE_CHARS = 1_200_000;
+const MAX_TOTAL_SOURCE_CHARS = 4_200_000;
 const CHUNK_CHARS = 3_200;
 const CHUNK_OVERLAP_LINES = 8;
 const MAX_UPLOADS = 8;
@@ -173,7 +173,7 @@ export async function processGitHubRepo(rawUrlInput: string, uploadedFiles: { na
   const selectedFiles = [...files]
     .sort((left, right) => filePriority(right.path) - filePriority(left.path) || left.path.localeCompare(right.path))
     .slice(0, MAX_INDEXED_FILES);
-  const fetched = await mapConcurrent(selectedFiles, 6, async (file) => ({
+  const fetched = await mapConcurrent(selectedFiles, 15, async (file) => ({
     file,
     content: await fetchTextFile(owner, repo, defaultBranch, file.path).catch(() => ''),
   }));
@@ -188,10 +188,17 @@ export async function processGitHubRepo(rawUrlInput: string, uploadedFiles: { na
     { id: crypto.randomUUID(), sourceId: null, content: `__FILE_TREE__\n${JSON.stringify(files.map((file) => file.path))}` },
   ];
 
+  let architectureMap = '__ARCHITECTURE_MAP__\n';
   let indexedCharacters = 0;
   let indexedFiles = 0;
   for (const { file, content } of fetched) {
     if (!content || indexedCharacters >= MAX_TOTAL_SOURCE_CHARS) continue;
+    const imports = extractImports(content);
+    const symbols = extractSymbols(content);
+    if (imports.length > 0 || symbols.length > 0) {
+      architectureMap += `[${file.path}]\nImports: ${imports.join(', ')}\nSignatures: ${symbols.join(', ')}\n\n`;
+    }
+
     const bounded = content.slice(0, MAX_TOTAL_SOURCE_CHARS - indexedCharacters);
     indexedCharacters += bounded.length;
     indexedFiles += 1;
@@ -200,6 +207,8 @@ export async function processGitHubRepo(rawUrlInput: string, uploadedFiles: { na
       chunks.push({ id: crypto.randomUUID(), sourceId, content: contentChunk });
     }
   }
+
+  chunks.push({ id: crypto.randomUUID(), sourceId: null, content: architectureMap.slice(0, CHUNK_CHARS * 15) });
 
   const validUploads = uploadedFiles.slice(0, MAX_UPLOADS)
     .filter((doc) => typeof doc.name === 'string' && typeof doc.content === 'string' && doc.content.length <= MAX_UPLOAD_CHARS);
